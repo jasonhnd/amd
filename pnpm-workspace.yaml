@@ -1,2 +1,4 @@
-allowBuilds:
-  sharp: set this to true or false
+# pnpm 11 settings (moved here from package.json/.npmrc)
+verifyDepsBeforeRun: false
+strictDepBuilds: false
+onlyBuiltDependencies: []
