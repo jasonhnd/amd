@@ -1,10 +1,35 @@
 import { ga4 } from '@/lib/mock-data'
 
+function fmtDuration(sec: number) {
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return m > 0 ? `${m}分${s}秒` : `${s}秒`
+}
+
 export function Ga4Panel() {
   const maxSource = Math.max(...ga4.organicBySource.map((s) => s.value))
+  const stats = [
+    { label: '访客', value: ga4.visitors.toLocaleString() },
+    { label: 'Sessions', value: ga4.sessions.toLocaleString() },
+    { label: '平均停留', value: fmtDuration(ga4.avgEngagementSec) },
+  ]
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-3 gap-3">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            className="rounded-xl border bg-[var(--color-surface)] px-3 py-2.5"
+            style={{ borderRadius: 12 }}
+          >
+            <div className="text-[11px] text-[var(--color-ink-faint)]">{s.label}</div>
+            <div className="tabular mt-0.5 text-base font-semibold tracking-tight">{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
       <div>
         <div className="mb-3 text-[13px] font-medium text-[var(--color-ink-soft)]">Key Events</div>
         <div className="flex flex-col gap-2.5">
@@ -44,6 +69,7 @@ export function Ga4Panel() {
             </div>
           ))}
         </div>
+      </div>
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import { SpendTrendChart } from '@/components/charts/SpendTrendChart'
 import { VisitorTrendChart } from '@/components/charts/VisitorTrendChart'
 import { CpcChart } from '@/components/charts/CpcChart'
 import { ClickShareChart } from '@/components/charts/ClickShareChart'
+import { DailyAdvice } from '@/components/DailyAdvice'
 import { REPORT_DATE } from '@/lib/mock-data'
 
 function Panel({
@@ -43,15 +44,15 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-6">
           <KpiCards />
 
-          <Panel title="渠道对比" hint="花费 / 展示 / 点击 / CPC · 预算规则超标标黄">
+          <Panel title="渠道表现对比" hint="花费 / 展示 / 点击 / CPC · 预算规则超标标黄">
             <ChannelTable />
           </Panel>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <Panel title="近 30 天花费趋势" hint="JPY">
+            <Panel title="💸 近 30 天花费趋势" hint="JPY">
               <SpendTrendChart />
             </Panel>
-            <Panel title="近 30 天访客趋势" hint="按来源">
+            <Panel title="👥 近 30 天访客趋势" hint="按来源">
               <VisitorTrendChart />
             </Panel>
           </div>
@@ -63,10 +64,14 @@ export default function DashboardPage() {
             <Panel title="点击贡献占比">
               <ClickShareChart />
             </Panel>
-            <Panel title="GA4 站点质量">
+            <Panel title="GA4 站内质量">
               <Ga4Panel />
             </Panel>
           </div>
+
+          <Panel title="💡 今日运营建议">
+            <DailyAdvice />
+          </Panel>
 
           <p className="pt-1 text-center text-[12px] text-[var(--color-ink-faint)]">
             AMD v1 原型 · 示例数据 · 接入真实 API 后为实时数据
