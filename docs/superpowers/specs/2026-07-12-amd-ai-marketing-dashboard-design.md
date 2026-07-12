@@ -109,7 +109,7 @@ interface Connector {
 ```
 
 ### 各平台实现
-- **GA4Connector**：Google Analytics Data API `runReport`。指标：访客 / sessions / Key Events（`job_search_start`、`job_search_submit`、`result_view`）/ 自然流量分渠道。Google OAuth。默认 property `298707336`。
+- **GA4Connector**：Google Analytics Data API `runReport`。指标：访客 / sessions / Key Events（`job_search_start`、`job_search_submit`、`result_view`）/ 自然流量分渠道。**授权方式：Google 服务账号（Service Account JSON 密钥，在连接页粘贴，AES-256-GCM 加密入库）**——自用单团队场景比 OAuth 更简单、无 token 刷新。默认 property `298707336`。Google Ads 后续可复用同一 GCP 项目。
 - **GoogleAdsConnector**：Google Ads API（GAQL）。复用 Google OAuth + developer token（MCC `656-303-8097`），客户 ID `920-316-7221`。指标：花费 / 展示 / 点击 / CPC / 转化。
 - **MetaAdsConnector**：Marketing API，账号 `act_1497377618536088`。指标：花费 / 展示 / 点击 / CPC。**兜底**：API 返回 `API access blocked` → `status=error` + 提示，并允许在连接页手动上传 xlsx（写入 `report_snapshots.source='upload'`）。
 - **XAdsConnector**：**手动上传 Daily xlsx**（Edge 导出的按日报表），SheetJS 解析 → 归一化 → `report_snapshots`。API 直连 v1 不做。
@@ -124,13 +124,14 @@ interface Connector {
 
 ### 需要的环境变量
 ```
-DATABASE_URL
+DATABASE_URL                       # Vercel Postgres
 AUTH_SECRET
-APP_ENCRYPTION_KEY                 # 32-byte base64
-GOOGLE_OAUTH_CLIENT_ID / _SECRET
-GOOGLE_ADS_DEVELOPER_TOKEN
-META_OAUTH_CLIENT_ID / _SECRET     # 或 system user token
+APP_ENCRYPTION_KEY                 # 32-byte base64，加解密所有平台凭证
+GOOGLE_ADS_DEVELOPER_TOKEN         # Google Ads 阶段用
+META_ACCESS_TOKEN                  # Meta 阶段用（或 system user token）
 ```
+
+平台凭证本身（GA4 服务账号 JSON、Meta token 等）不放环境变量，而是在连接页录入、加密后存 `connections.credentials`。
 
 ## 7. 看板 UI（对齐旧报告结构）
 
