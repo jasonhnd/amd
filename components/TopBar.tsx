@@ -9,7 +9,7 @@ export function TopBar({ date }: { date: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--color-panel)] px-8 py-4">
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold tracking-tight">广告日报</h1>
+        <h1 className="text-lg font-semibold tracking-tight">📊 广告日报</h1>
         <span
           className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
           style={{
