@@ -7,7 +7,15 @@ import { VisitorTrendChart } from '@/components/charts/VisitorTrendChart'
 import { CpcChart } from '@/components/charts/CpcChart'
 import { ClickShareChart } from '@/components/charts/ClickShareChart'
 import { DailyAdvice } from '@/components/DailyAdvice'
+import { KEY_EVENTS } from '@/lib/connectors'
+import { getGa4Day } from '@/lib/ga4-service'
 import { REPORT_DATE } from '@/lib/mock-data'
+
+const KEY_EVENT_LABELS: Record<(typeof KEY_EVENTS)[number], string> = {
+  job_search_start: '开始查询职业',
+  job_search_submit: '提交查询',
+  result_view: '查看结果',
+}
 
 function Panel({
   title,
@@ -36,12 +44,30 @@ function Panel({
   )
 }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const ga4Day = await getGa4Day(REPORT_DATE)
+  const ga4Props = ga4Day
+    ? {
+        visitors: ga4Day.visitors,
+        sessions: ga4Day.sessions,
+        avgEngagementSec: ga4Day.avgEngagementSec,
+        keyEvents: KEY_EVENTS.map((key) => ({
+          name: key,
+          label: KEY_EVENT_LABELS[key],
+          value: ga4Day.keyEvents?.[key] ?? 0,
+        })),
+        organicBySource: Object.entries(ga4Day.organicBySource ?? {})
+          .map(([source, value]) => ({ source, value }))
+          .sort((a, b) => b.value - a.value),
+      }
+    : {}
+
   return (
     <>
       <TopBar date={REPORT_DATE} />
       <div className="mx-auto max-w-[1180px] px-8 py-7">
         <div className="flex flex-col gap-6">
+          {/* TODO(next phase): real Google/Meta/X */}
           <KpiCards />
 
           <Panel title="渠道表现对比" hint="花费 / 展示 / 点击 / CPC · 预算规则超标标黄">
@@ -65,7 +91,7 @@ export default function DashboardPage() {
               <ClickShareChart />
             </Panel>
             <Panel title="GA4 站内质量">
-              <Ga4Panel />
+              <Ga4Panel {...ga4Props} />
             </Panel>
           </div>
 
