@@ -1,7 +1,26 @@
 import { connections, STATUS_META } from '@/lib/connections'
+import { getGa4Credentials, isGa4Configured } from '@/lib/ga4-config'
 import { Check, AlertTriangle, Plus, Upload } from 'lucide-react'
 
 export default function ConnectionsPage() {
+  const ga4Configured = isGa4Configured()
+  const ga4Credentials = getGa4Credentials()
+  const visibleConnections = connections.map((connection) => {
+    if (connection.key !== 'ga4') {
+      return connection
+    }
+
+    return {
+      ...connection,
+      accountId: ga4Credentials ? `Property ${ga4Credentials.propertyId}` : 'GA4_PROPERTY_ID 未配置',
+      status: ga4Configured ? 'connected' : 'disconnected',
+      method: 'Vercel 环境变量',
+      note: ga4Configured
+        ? 'GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON 已配置，凭证只在服务端读取'
+        : '在 Vercel 环境变量设置 GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON 后启用',
+    } as const
+  })
+
   return (
     <>
       <div className="flex items-center gap-3 border-b bg-[var(--color-panel)] px-8 py-4">
@@ -13,7 +32,7 @@ export default function ConnectionsPage() {
 
       <div className="mx-auto max-w-[900px] px-8 py-7">
         <div className="grid gap-4">
-          {connections.map((c) => {
+          {visibleConnections.map((c) => {
             const meta = STATUS_META[c.status]
             return (
               <div
@@ -63,7 +82,15 @@ export default function ConnectionsPage() {
                   </div>
 
                   <div className="flex shrink-0 gap-2">
-                    {c.key === 'x_ads' || c.status === 'error' ? (
+                    {c.key === 'ga4' ? (
+                      <div
+                        className="rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)]"
+                        style={{ borderRadius: 10 }}
+                      >
+                        Vercel Env
+                      </div>
+                    ) : null}
+                    {c.key !== 'ga4' && (c.key === 'x_ads' || c.status === 'error') ? (
                       <button
                         className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
                         style={{ borderRadius: 10 }}
@@ -72,14 +99,15 @@ export default function ConnectionsPage() {
                         上传 xlsx
                       </button>
                     ) : null}
-                    {c.status === 'connected' ? (
+                    {c.key !== 'ga4' && c.status === 'connected' ? (
                       <button
                         className="rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
                         style={{ borderRadius: 10 }}
                       >
                         断开
                       </button>
-                    ) : (
+                    ) : null}
+                    {c.key !== 'ga4' && c.status !== 'connected' ? (
                       <button
                         className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
                         style={{ background: 'var(--color-accent)', borderRadius: 10 }}
@@ -87,7 +115,7 @@ export default function ConnectionsPage() {
                         <Plus size={14} />
                         连接
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -96,7 +124,7 @@ export default function ConnectionsPage() {
         </div>
 
         <p className="mt-6 text-center text-[12px] text-[var(--color-ink-faint)]">
-          原型演示 · 凭证将 AES-256-GCM 加密后存储，前端不接触任何 token
+          GA4 凭证由 Vercel 环境变量提供；其他平台仍为占位状态
         </p>
       </div>
     </>
