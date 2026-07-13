@@ -1,66 +1,62 @@
-# AMD GA4 Real-Data Phase Implementation Plan
+# AMD GA4 Real-Data Phase Implementation Plan (Option B · No-DB, all-Vercel)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn AMD from a mock-data prototype into a real app that logs users in, connects a live GA4 property via an encrypted service-account key, pulls real GA4 data through a reusable connector, and shows it on the dashboard — deployed on Vercel.
+**Goal:** Turn AMD from a mock-data prototype into a real, logged-in app that pulls live GA4 data through a reusable connector and shows it on the dashboard — with **zero database and zero external bill** (everything in Vercel: env vars + serverless + Next.js caching).
 
-**Architecture:** Next.js App Router. Auth.js (Credentials, JWT) gates the whole site with seeded users. Postgres (Vercel/Neon) via Drizzle holds `users`, `connections`, `report_snapshots`. Platform credentials are pasted in the Connections page, AES-256-GCM–encrypted, and stored in `connections.credentials`. A `Connector` interface is implemented first for GA4 (`@google-analytics/data` + service account); the dashboard reads normalized daily metrics from `report_snapshots`, refreshing from the connector on demand. Other platforms keep mock/placeholder states until their connectors land in later phases.
+**Architecture:** Next.js App Router. Auth.js (Credentials, JWT) gates the site; the small user list lives in a single env var (`AMD_USERS`). The GA4 service-account JSON + property ID live in Vercel env vars (Vercel already stores env encrypted). A `Connector` interface is implemented for GA4 (`@google-analytics/data`); the dashboard fetches live GA4 metrics on the server, wrapped in Next.js caching (`unstable_cache`, revalidate hourly), with a manual refresh that revalidates the tag. No Postgres, no Drizzle, no custom crypto in this phase. Other platforms keep mock/placeholder states.
 
-**Tech Stack:** Next.js 15, TypeScript, Drizzle ORM + `postgres` (postgres.js), Auth.js v5 (`next-auth`), `bcryptjs` (pure-JS hashing, no native build), `@google-analytics/data`, `zod`, Node `crypto` (built-in AES-256-GCM), Vitest for unit tests.
+**Tech Stack:** Next.js 15, TypeScript, Auth.js v5 (`next-auth`), `bcryptjs` (pure-JS password hashing), `@google-analytics/data`, `zod`, Vitest.
 
 ## Global Constraints
 
-- Single shared workspace (556 data). No public signup; users are seeded. Data is shared across users.
-- All platform API calls run server-side only. No credential or token ever reaches the client bundle.
-- Credentials stored encrypted at rest (AES-256-GCM) in `connections.credentials`; never in env, git, or logs.
-- Encryption key from `APP_ENCRYPTION_KEY` (base64, 32 bytes). DB from `DATABASE_URL`. Auth from `AUTH_SECRET`.
-- The handoff markdown stays out of git (`.gitignore` already excludes `*交接*.md`).
-- Package scripts run through pnpm; `next build` must stay green (pre-push hook runs it).
+- Single shared workspace (556 data). No public signup; users come from `AMD_USERS` env. Data is shared.
+- All platform API calls run server-side only. No credential ever reaches the client bundle.
+- Credentials live in Vercel env vars only — never in git, client, or logs. No custom encryption needed (Vercel env is the secret store).
+- `next build` must stay green (pre-push hook runs it). Do not commit any real service-account JSON. Test the connector against a mocked client only.
 - GA4 default property: `298707336`. Key Events: `job_search_start`, `job_search_submit`, `result_view`.
-- Do not commit any real service-account JSON. Test connectors against mocked clients only.
+- Env vars: `AUTH_SECRET`, `AMD_USERS` (JSON), `GA4_PROPERTY_ID`, `GA4_SERVICE_ACCOUNT_JSON`.
+- No database, no Drizzle, no `report_snapshots` in this phase (deferred to the future DB phase for X-upload / cross-platform history).
 
 ---
 
 ## File Structure
 
-- `drizzle.config.ts` — Drizzle Kit config (schema path, DB url).
-- `db/schema.ts` — tables: `users`, `connections`, `reportSnapshots`; enums; inferred types.
-- `db/index.ts` — postgres.js client + Drizzle instance (server-only).
-- `lib/crypto.ts` — `encrypt()` / `decrypt()` (AES-256-GCM).
-- `lib/env.ts` — validated env access (zod).
-- `auth.ts` — Auth.js config (Credentials provider, JWT, callbacks).
+- `lib/env.ts` — validated env access.
+- `lib/users.ts` — parse `AMD_USERS`, `findUser(email)`.
+- `auth.ts` — Auth.js config (Credentials, JWT).
 - `middleware.ts` — route protection.
 - `app/api/auth/[...nextauth]/route.ts` — Auth.js handlers.
-- `app/login/page.tsx` — real login form (replaces mock link).
-- `scripts/seed.ts` — seed users.
-- `lib/connectors/types.ts` — `Connector`, `DailyMetrics`, `Platform`, `ConnStatus`.
-- `lib/connectors/ga4.ts` — GA4 connector (service account + Data API).
-- `lib/connectors/index.ts` — registry mapping platform → connector.
-- `lib/connections-repo.ts` — DB access for connections (get/list/upsert/updateStatus).
-- `lib/report-service.ts` — snapshot cache read/upsert + refresh orchestration.
-- `app/(app)/connections/page.tsx` — real data + save action wiring.
-- `app/(app)/connections/actions.ts` — server actions: save GA4 credential, refresh.
-- `app/(app)/dashboard/page.tsx` — read real GA4 section from `report-service`.
-- `components/Ga4Panel.tsx` — accept props instead of importing mock.
+- `app/login/page.tsx` — real login form (replace mock link).
+- `components/Sidebar.tsx` — real sign-out.
+- `scripts/hash-users.ts` — helper to generate the `AMD_USERS` JSON from email/name/password.
+- `lib/connectors/types.ts` — `Connector`, `DailyMetrics`, `Platform`.
+- `lib/connectors/ga4.ts` — GA4 connector (service account from env).
+- `lib/connectors/index.ts` — registry.
+- `lib/ga4-config.ts` — read GA4 property/credentials from env; `isGa4Configured()`.
+- `lib/ga4-service.ts` — cached live fetch (`getGa4Today`, `getGa4Range`) + `refreshGa4()`.
+- `app/(app)/dashboard/page.tsx` — read real GA4 section.
+- `app/(app)/dashboard/actions.ts` — refresh action (revalidateTag).
+- `components/Ga4Panel.tsx` — accept props + empty state.
+- `app/(app)/connections/page.tsx` — read-only status (configured / not) + test.
 - Test files under `**/*.test.ts` (Vitest).
 
 ---
 
-## Task 1: Database schema, client, and Drizzle setup
+## Task 1: Env accessor, user list, and Auth.js login
 
 **Files:**
-- Create: `db/schema.ts`, `db/index.ts`, `drizzle.config.ts`
-- Modify: `package.json` (deps + scripts)
-- Modify: `lib/env.ts` (create)
+- Create: `lib/env.ts`, `lib/users.ts`, `lib/users.test.ts`, `auth.ts`, `middleware.ts`, `app/api/auth/[...nextauth]/route.ts`, `scripts/hash-users.ts`
+- Modify: `app/login/page.tsx`, `components/Sidebar.tsx`, `package.json`
 
 **Interfaces:**
-- Produces: `db` (Drizzle instance), tables `users`, `connections`, `reportSnapshots`, and inferred types `User`, `Connection`, `NewConnection`, `ReportSnapshot`. Platform enum values: `'ga4' | 'google_ads' | 'meta_ads' | 'x_ads'`. Status enum: `'connected' | 'error' | 'disconnected'`.
+- Produces: `env` accessor; `type AmdUser = { email: string; name: string; passwordHash: string }`; `findUser(email: string): AmdUser | undefined`; `auth()`, `signIn`, `signOut` from `auth.ts`.
 
 - [ ] **Step 1: Add dependencies**
 
 ```bash
-pnpm add drizzle-orm postgres zod bcryptjs next-auth@beta @google-analytics/data
-pnpm add -D drizzle-kit vitest @types/bcryptjs
+pnpm add next-auth@beta bcryptjs zod
+pnpm add -D vitest @types/bcryptjs
 ```
 
 - [ ] **Step 2: Create env accessor** — `lib/env.ts`
@@ -68,6 +64,9 @@ pnpm add -D drizzle-kit vitest @types/bcryptjs
 ```ts
 import 'server-only'
 
+function opt(name: string): string | undefined {
+  return process.env[name] || undefined
+}
 function required(name: string): string {
   const v = process.env[name]
   if (!v) throw new Error(`Missing required env var: ${name}`)
@@ -75,218 +74,63 @@ function required(name: string): string {
 }
 
 export const env = {
-  DATABASE_URL: () => required('DATABASE_URL'),
-  APP_ENCRYPTION_KEY: () => required('APP_ENCRYPTION_KEY'),
   AUTH_SECRET: () => required('AUTH_SECRET'),
+  AMD_USERS: () => process.env.AMD_USERS ?? '[]',
+  GA4_PROPERTY_ID: () => opt('GA4_PROPERTY_ID'),
+  GA4_SERVICE_ACCOUNT_JSON: () => opt('GA4_SERVICE_ACCOUNT_JSON'),
 }
 ```
 
-- [ ] **Step 3: Create schema** — `db/schema.ts`
+- [ ] **Step 3: Write the failing test** — `lib/users.test.ts`
 
 ```ts
-import { pgTable, pgEnum, uuid, text, timestamp, jsonb, date, unique } from 'drizzle-orm/pg-core'
+import { describe, it, expect } from 'vitest'
 
-export const platformEnum = pgEnum('platform', ['ga4', 'google_ads', 'meta_ads', 'x_ads'])
-export const connStatusEnum = pgEnum('conn_status', ['connected', 'error', 'disconnected'])
-export const snapshotSourceEnum = pgEnum('snapshot_source', ['api', 'upload'])
-
-export const users = pgTable('users', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  email: text('email').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  name: text('name').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
-
-export const connections = pgTable('connections', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  platform: platformEnum('platform').notNull().unique(),
-  label: text('label').notNull(),
-  accountId: text('account_id'),
-  credentials: text('credentials'), // AES-256-GCM encrypted blob
-  status: connStatusEnum('status').notNull().default('disconnected'),
-  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
-  lastError: text('last_error'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
-
-export const reportSnapshots = pgTable(
-  'report_snapshots',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    platform: platformEnum('platform').notNull(),
-    date: date('date').notNull(),
-    metrics: jsonb('metrics').notNull(),
-    source: snapshotSourceEnum('source').notNull().default('api'),
-    fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => ({ uniqPlatformDate: unique().on(t.platform, t.date) })
-)
-
-export type User = typeof users.$inferSelect
-export type Connection = typeof connections.$inferSelect
-export type NewConnection = typeof connections.$inferInsert
-export type ReportSnapshot = typeof reportSnapshots.$inferSelect
-```
-
-- [ ] **Step 4: Create DB client** — `db/index.ts`
-
-```ts
-import 'server-only'
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
-import { env } from '@/lib/env'
-import * as schema from './schema'
-
-const client = postgres(env.DATABASE_URL(), { prepare: false })
-export const db = drizzle(client, { schema })
-export * from './schema'
-```
-
-- [ ] **Step 5: Create Drizzle config** — `drizzle.config.ts`
-
-```ts
-import type { Config } from 'drizzle-kit'
-
-export default {
-  schema: './db/schema.ts',
-  out: './db/migrations',
-  dialect: 'postgresql',
-  dbCredentials: { url: process.env.DATABASE_URL ?? '' },
-} satisfies Config
-```
-
-- [ ] **Step 6: Add scripts to package.json**
-
-Add to `scripts`: `"db:generate": "drizzle-kit generate"`, `"db:migrate": "drizzle-kit migrate"`, `"db:seed": "node --experimental-strip-types scripts/seed.ts"`, `"test": "vitest run"`.
-
-- [ ] **Step 7: Generate the migration**
-
-Run: `pnpm db:generate`
-Expected: creates `db/migrations/0000_*.sql` with the three tables and enums.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add package.json pnpm-lock.yaml db/ drizzle.config.ts lib/env.ts
-git commit -m "feat: add drizzle schema, db client, env accessor"
-```
-
----
-
-## Task 2: AES-256-GCM encryption utility
-
-**Files:**
-- Create: `lib/crypto.ts`, `lib/crypto.test.ts`
-
-**Interfaces:**
-- Produces: `encrypt(plaintext: string): string` and `decrypt(blob: string): string`. Blob format: base64 of `iv(12) || authTag(16) || ciphertext`. Key read from `APP_ENCRYPTION_KEY` (base64, must decode to 32 bytes).
-
-- [ ] **Step 1: Write the failing test** — `lib/crypto.test.ts`
-
-```ts
-import { describe, it, expect, beforeAll } from 'vitest'
-import { randomBytes } from 'node:crypto'
-
-beforeAll(() => {
-  process.env.APP_ENCRYPTION_KEY = randomBytes(32).toString('base64')
-})
-
-describe('crypto', () => {
-  it('round-trips plaintext', async () => {
-    const { encrypt, decrypt } = await import('./crypto')
-    const secret = '{"type":"service_account","private_key":"abc"}'
-    const blob = encrypt(secret)
-    expect(blob).not.toContain('service_account')
-    expect(decrypt(blob)).toBe(secret)
-  })
-
-  it('produces different ciphertext each call (random IV)', async () => {
-    const { encrypt } = await import('./crypto')
-    expect(encrypt('same')).not.toBe(encrypt('same'))
-  })
-
-  it('throws on tampered blob', async () => {
-    const { encrypt, decrypt } = await import('./crypto')
-    const blob = encrypt('data')
-    const tampered = Buffer.from(blob, 'base64')
-    tampered[tampered.length - 1] ^= 0xff
-    expect(() => decrypt(tampered.toString('base64'))).toThrow()
+describe('findUser', () => {
+  it('finds a user case-insensitively from AMD_USERS', async () => {
+    process.env.AMD_USERS = JSON.stringify([
+      { email: 'yaku@team.com', name: 'Yaku', passwordHash: 'h1' },
+    ])
+    const { findUser } = await import('./users')
+    expect(findUser('YAKU@team.com')?.name).toBe('Yaku')
+    expect(findUser('nobody@team.com')).toBeUndefined()
   })
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 4: Run test to verify it fails**
 
-Run: `pnpm test lib/crypto.test.ts`
-Expected: FAIL — cannot find module './crypto'.
+Run: `pnpm test lib/users.test.ts`
+Expected: FAIL — cannot find module './users'.
 
-- [ ] **Step 3: Write implementation** — `lib/crypto.ts`
+- [ ] **Step 5: Implement** — `lib/users.ts`
 
 ```ts
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { z } from 'zod'
+import { env } from './env'
 
-const IV_LEN = 12
-const TAG_LEN = 16
+const userSchema = z.object({ email: z.string().email(), name: z.string(), passwordHash: z.string() })
+export type AmdUser = z.infer<typeof userSchema>
 
-function key(): Buffer {
-  const k = Buffer.from(process.env.APP_ENCRYPTION_KEY ?? '', 'base64')
-  if (k.length !== 32) throw new Error('APP_ENCRYPTION_KEY must decode to 32 bytes')
-  return k
-}
-
-export function encrypt(plaintext: string): string {
-  const iv = randomBytes(IV_LEN)
-  const cipher = createCipheriv('aes-256-gcm', key(), iv)
-  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
-  const tag = cipher.getAuthTag()
-  return Buffer.concat([iv, tag, ct]).toString('base64')
-}
-
-export function decrypt(blob: string): string {
-  const buf = Buffer.from(blob, 'base64')
-  const iv = buf.subarray(0, IV_LEN)
-  const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN)
-  const ct = buf.subarray(IV_LEN + TAG_LEN)
-  const decipher = createDecipheriv('aes-256-gcm', key(), iv)
-  decipher.setAuthTag(tag)
-  return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8')
+export function findUser(email: string): AmdUser | undefined {
+  const list = z.array(userSchema).catch([]).parse(JSON.parse(env.AMD_USERS()))
+  const target = email.trim().toLowerCase()
+  return list.find((u) => u.email.toLowerCase() === target)
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 6: Run test to verify it passes**
 
-Run: `pnpm test lib/crypto.test.ts`
-Expected: PASS (3 tests).
+Run: `pnpm test lib/users.test.ts`
+Expected: PASS.
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add lib/crypto.ts lib/crypto.test.ts
-git commit -m "feat: add AES-256-GCM credential encryption"
-```
-
----
-
-## Task 3: Auth.js login, middleware, and user seeding
-
-**Files:**
-- Create: `auth.ts`, `middleware.ts`, `app/api/auth/[...nextauth]/route.ts`, `scripts/seed.ts`
-- Modify: `app/login/page.tsx` (real form), `components/Sidebar.tsx` (real sign-out)
-
-**Interfaces:**
-- Consumes: `db`, `users` (Task 1); `bcryptjs`.
-- Produces: `auth()` (session getter), `signIn`, `signOut` from `auth.ts`. Middleware redirects unauthenticated requests to `/login`.
-
-- [ ] **Step 1: Create Auth.js config** — `auth.ts`
+- [ ] **Step 7: Create Auth.js config** — `auth.ts`
 
 ```ts
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
-import { eq } from 'drizzle-orm'
-import { db, users } from '@/db'
+import { findUser } from '@/lib/users'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'jwt' },
@@ -295,49 +139,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Credentials({
       credentials: { email: {}, password: {} },
       async authorize(creds) {
-        const email = String(creds?.email ?? '').toLowerCase()
+        const email = String(creds?.email ?? '')
         const password = String(creds?.password ?? '')
-        if (!email || !password) return null
-        const [user] = await db.select().from(users).where(eq(users.email, email))
+        const user = findUser(email)
         if (!user) return null
-        const ok = await bcrypt.compare(password, user.passwordHash)
-        if (!ok) return null
-        return { id: user.id, email: user.email, name: user.name }
+        if (!(await bcrypt.compare(password, user.passwordHash))) return null
+        return { id: user.email, email: user.email, name: user.name }
       },
     }),
   ],
 })
 ```
 
-- [ ] **Step 2: Create route handler** — `app/api/auth/[...nextauth]/route.ts`
+- [ ] **Step 8: Route handler** — `app/api/auth/[...nextauth]/route.ts`
 
 ```ts
 import { handlers } from '@/auth'
 export const { GET, POST } = handlers
 ```
 
-- [ ] **Step 3: Create middleware** — `middleware.ts`
+- [ ] **Step 9: Middleware** — `middleware.ts`
 
 ```ts
 import { auth } from '@/auth'
 
 export default auth((req) => {
-  const isLogin = req.nextUrl.pathname.startsWith('/login')
-  const isAuthApi = req.nextUrl.pathname.startsWith('/api/auth')
-  if (!req.auth && !isLogin && !isAuthApi) {
-    const url = new URL('/login', req.nextUrl.origin)
-    return Response.redirect(url)
+  const { pathname } = req.nextUrl
+  if (!req.auth && !pathname.startsWith('/login') && !pathname.startsWith('/api/auth')) {
+    return Response.redirect(new URL('/login', req.nextUrl.origin))
   }
 })
 
-export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
-}
+export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'] }
 ```
 
-- [ ] **Step 4: Replace login page with a real form** — `app/login/page.tsx`
+- [ ] **Step 10: Real login form** — `app/login/page.tsx`
 
-Replace the `<Link href="/dashboard">` with a `<form action={...}>` that calls a server action invoking `signIn('credentials', { email, password, redirectTo: '/dashboard' })`. Keep the existing visual styling. Add an inline server action at top of file:
+Add a top-of-file server action and wrap the existing inputs in `<form action={login}>`; turn "进入看板" into `<button type="submit">`. Keep styling.
 
 ```tsx
 import { signIn } from '@/auth'
@@ -352,73 +190,54 @@ async function login(formData: FormData) {
 }
 ```
 
-Wire `<form action={login}>` around the email/password inputs, and change the "进入看板" link into `<button type="submit">`.
+- [ ] **Step 11: Real sign-out** — `components/Sidebar.tsx`
 
-- [ ] **Step 5: Create seed script** — `scripts/seed.ts`
+Replace the logout `<Link>` with `<form action={doSignOut}>` where a server action calls `signOut({ redirectTo: '/login' })`. (Put the action in a tiny `app/(app)/actions.ts` `'use server'` file and import it, since Sidebar is a client component and cannot declare inline server actions.)
+
+- [ ] **Step 12: Hash-users helper** — `scripts/hash-users.ts`
 
 ```ts
-import 'dotenv/config'
 import bcrypt from 'bcryptjs'
-import { db, users } from '../db'
 
-const seedUsers = [
-  { email: 'yaku@team.com', name: 'Yaku', password: process.env.SEED_PW_YAKU ?? 'change-me-1' },
-  { email: 'jason@team.com', name: 'Jason', password: process.env.SEED_PW_JASON ?? 'change-me-2' },
-]
-
-for (const u of seedUsers) {
-  const passwordHash = await bcrypt.hash(u.password, 10)
-  await db
-    .insert(users)
-    .values({ email: u.email, name: u.name, passwordHash })
-    .onConflictDoUpdate({ target: users.email, set: { passwordHash, name: u.name } })
-  console.log(`seeded ${u.email}`)
-}
-process.exit(0)
+// Usage: node --experimental-strip-types scripts/hash-users.ts 'yaku@team.com|Yaku|pw1' 'jason@team.com|Jason|pw2'
+const users = process.argv.slice(2).map((arg) => {
+  const [email, name, password] = arg.split('|')
+  return { email, name, passwordHash: bcrypt.hashSync(password, 10) }
+})
+console.log(JSON.stringify(users))
 ```
 
-- [ ] **Step 6: Update sidebar sign-out** — `components/Sidebar.tsx`
+Add `"test": "vitest run"` to package.json scripts.
 
-Replace the `<Link href="/login">` logout with a form calling a `signOut` server action:
-
-```tsx
-// in a server action file or inline where allowed
-import { signOut } from '@/auth'
-async function doSignOut() { 'use server'; await signOut({ redirectTo: '/login' }) }
-```
-
-Render `<form action={doSignOut}><button type="submit" aria-label="退出"><LogOut size={16} /></button></form>`.
-
-- [ ] **Step 7: Verify build**
+- [ ] **Step 13: Verify build**
 
 Run: `pnpm build`
-Expected: compiles; `/login` and `/api/auth/[...nextauth]` routes present.
+Expected: compiles; `/login`, `/api/auth/[...nextauth]` present.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 14: Commit**
 
 ```bash
-git add auth.ts middleware.ts app/api/auth scripts/seed.ts app/login/page.tsx components/Sidebar.tsx
-git commit -m "feat: Auth.js credentials login, middleware guard, user seeding"
+git add lib/env.ts lib/users.ts lib/users.test.ts auth.ts middleware.ts app/api/auth app/login/page.tsx app/(app)/actions.ts components/Sidebar.tsx scripts/hash-users.ts package.json pnpm-lock.yaml
+git commit -m "feat: env-based auth (AMD_USERS), login, middleware guard"
 ```
 
 ---
 
-## Task 4: Connector types + GA4 connector
+## Task 2: Connector types + GA4 connector (service account from env)
 
 **Files:**
-- Create: `lib/connectors/types.ts`, `lib/connectors/ga4.ts`, `lib/connectors/ga4.test.ts`, `lib/connectors/index.ts`
+- Create: `lib/connectors/types.ts`, `lib/connectors/ga4.ts`, `lib/connectors/ga4.test.ts`, `lib/connectors/index.ts`, `lib/ga4-config.ts`
 
 **Interfaces:**
-- Consumes: `decrypt` (Task 2), `@google-analytics/data`.
 - Produces:
   - `type Platform = 'ga4' | 'google_ads' | 'meta_ads' | 'x_ads'`
   - `interface DailyMetrics { date: string; spend?: number; impressions?: number; clicks?: number; ctr?: number; cpc?: number; cpm?: number; visitors?: number; sessions?: number; avgEngagementSec?: number; keyEvents?: Record<string, number>; organicBySource?: Record<string, number> }`
-  - `interface Connector { platform: Platform; fetchDaily(cfg: ConnectorConfig, range: { start: string; end: string }): Promise<DailyMetrics[]>; getStatus(cfg: ConnectorConfig): Promise<{ ok: boolean; error?: string }> }`
-  - `interface ConnectorConfig { accountId: string | null; credentials: string | null }` (credentials = encrypted blob)
-  - `ga4Connector: Connector`
-  - `getConnector(platform: Platform): Connector | null`
+  - `interface Ga4Credentials { propertyId: string; clientEmail: string; privateKey: string; projectId: string }`
+  - `normalizeGa4(resp): DailyMetrics[]`, `mergeKeyEvents(base, resp): DailyMetrics[]`
+  - `fetchGa4Daily(cred, range): Promise<DailyMetrics[]>`, `ga4Status(cred): Promise<{ ok; error? }>`
+  - `getGa4Credentials(): Ga4Credentials | null`, `isGa4Configured(): boolean`
 
-- [ ] **Step 1: Create types** — `lib/connectors/types.ts`
+- [ ] **Step 1: Types** — `lib/connectors/types.ts`
 
 ```ts
 export type Platform = 'ga4' | 'google_ads' | 'meta_ads' | 'x_ads'
@@ -438,90 +257,109 @@ export interface DailyMetrics {
   organicBySource?: Record<string, number>
 }
 
-export interface ConnectorConfig {
-  accountId: string | null
-  credentials: string | null // encrypted blob
-}
-
-export interface Connector {
-  platform: Platform
-  fetchDaily(cfg: ConnectorConfig, range: { start: string; end: string }): Promise<DailyMetrics[]>
-  getStatus(cfg: ConnectorConfig): Promise<{ ok: boolean; error?: string }>
-}
-
 export const KEY_EVENTS = ['job_search_start', 'job_search_submit', 'result_view'] as const
 ```
 
-- [ ] **Step 2: Write the failing test** — `lib/connectors/ga4.test.ts`
-
-The GA4 client is injected so we can mock it. Test the normalization of a fake `runReport` response into `DailyMetrics`.
+- [ ] **Step 2: Config accessor** — `lib/ga4-config.ts`
 
 ```ts
-import { describe, it, expect, beforeAll, vi } from 'vitest'
-import { randomBytes } from 'node:crypto'
+import 'server-only'
+import { z } from 'zod'
+import { env } from '@/lib/env'
 
-beforeAll(() => {
-  process.env.APP_ENCRYPTION_KEY = randomBytes(32).toString('base64')
+export interface Ga4Credentials {
+  propertyId: string
+  clientEmail: string
+  privateKey: string
+  projectId: string
+}
+
+const saSchema = z.object({
+  client_email: z.string().email(),
+  private_key: z.string().min(1),
+  project_id: z.string().min(1),
 })
 
+export function getGa4Credentials(): Ga4Credentials | null {
+  const propertyId = env.GA4_PROPERTY_ID()
+  const raw = env.GA4_SERVICE_ACCOUNT_JSON()
+  if (!propertyId || !raw) return null
+  try {
+    const sa = saSchema.parse(JSON.parse(raw))
+    return { propertyId, clientEmail: sa.client_email, privateKey: sa.private_key, projectId: sa.project_id }
+  } catch {
+    return null
+  }
+}
+
+export function isGa4Configured(): boolean {
+  return getGa4Credentials() !== null
+}
+```
+
+- [ ] **Step 3: Write the failing test** — `lib/connectors/ga4.test.ts`
+
+```ts
+import { describe, it, expect } from 'vitest'
+
 describe('ga4 normalize', () => {
-  it('maps a runReport response into DailyMetrics per date', async () => {
+  it('sums activeUsers per date and records channel breakdown', async () => {
     const { normalizeGa4 } = await import('./ga4')
     const resp = {
       rows: [
-        {
-          dimensionValues: [{ value: '20260711' }, { value: 'Organic Search' }],
-          metricValues: [{ value: '96' }, { value: '110' }, { value: '90' }],
-        },
-        {
-          dimensionValues: [{ value: '20260711' }, { value: 'Direct' }],
-          metricValues: [{ value: '47' }, { value: '52' }, { value: '80' }],
-        },
+        { dimensionValues: [{ value: '20260711' }, { value: 'Organic Search' }], metricValues: [{ value: '96' }, { value: '110' }, { value: '80' }] },
+        { dimensionValues: [{ value: '20260711' }, { value: 'Direct' }], metricValues: [{ value: '47' }, { value: '52' }, { value: '70' }] },
       ],
     }
     const out = normalizeGa4(resp as any)
     const day = out.find((d) => d.date === '2026-07-11')!
-    expect(day.visitors).toBe(143) // 96 + 47 (activeUsers summed)
+    expect(day.visitors).toBe(143)
     expect(day.organicBySource).toEqual({ 'Organic Search': 96, Direct: 47 })
+  })
+
+  it('merges key events onto matching dates', async () => {
+    const { mergeKeyEvents } = await import('./ga4')
+    const base = [{ date: '2026-07-11', visitors: 143, keyEvents: {} as Record<string, number> }]
+    const resp = {
+      rows: [
+        { dimensionValues: [{ value: '20260711' }, { value: 'job_search_start' }], metricValues: [{ value: '58' }] },
+      ],
+    }
+    const out = mergeKeyEvents(base as any, resp as any)
+    expect(out[0].keyEvents!['job_search_start']).toBe(58)
   })
 })
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [ ] **Step 4: Run test to verify it fails**
 
 Run: `pnpm test lib/connectors/ga4.test.ts`
-Expected: FAIL — `normalizeGa4` not exported.
+Expected: FAIL — module not found.
 
-- [ ] **Step 4: Implement GA4 connector** — `lib/connectors/ga4.ts`
+- [ ] **Step 5: Implement** — `lib/connectors/ga4.ts`
 
 ```ts
 import 'server-only'
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
-import { decrypt } from '@/lib/crypto'
-import type { Connector, ConnectorConfig, DailyMetrics } from './types'
+import type { Ga4Credentials } from '@/lib/ga4-config'
+import type { DailyMetrics } from './types'
 import { KEY_EVENTS } from './types'
 
-interface Ga4Row {
-  dimensionValues?: { value?: string | null }[]
-  metricValues?: { value?: string | null }[]
-}
-interface Ga4Response {
-  rows?: Ga4Row[]
-}
+interface Row { dimensionValues?: { value?: string | null }[]; metricValues?: { value?: string | null }[] }
+interface Resp { rows?: Row[] }
 
 function ymd(raw: string): string {
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
 }
 
-// dimensions: [date, sessionSource/Medium channel]; metrics: [activeUsers, sessions, avgEngagement]
-export function normalizeGa4(resp: Ga4Response): DailyMetrics[] {
+export function normalizeGa4(resp: Resp): DailyMetrics[] {
   const byDate = new Map<string, DailyMetrics>()
   for (const row of resp.rows ?? []) {
     const rawDate = row.dimensionValues?.[0]?.value ?? ''
+    if (!rawDate) continue
     const channel = row.dimensionValues?.[1]?.value ?? 'Unknown'
     const users = Number(row.metricValues?.[0]?.value ?? 0)
     const sessions = Number(row.metricValues?.[1]?.value ?? 0)
-    if (!rawDate) continue
     const date = ymd(rawDate)
     const d = byDate.get(date) ?? { date, visitors: 0, sessions: 0, organicBySource: {} }
     d.visitors = (d.visitors ?? 0) + users
@@ -532,42 +370,7 @@ export function normalizeGa4(resp: Ga4Response): DailyMetrics[] {
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
-function client(cfg: ConnectorConfig): BetaAnalyticsDataClient {
-  if (!cfg.credentials) throw new Error('GA4 not connected')
-  const sa = JSON.parse(decrypt(cfg.credentials))
-  return new BetaAnalyticsDataClient({
-    credentials: { client_email: sa.client_email, private_key: sa.private_key },
-    projectId: sa.project_id,
-  })
-}
-
-async function runTraffic(cfg: ConnectorConfig, range: { start: string; end: string }) {
-  const [resp] = await client(cfg).runReport({
-    property: `properties/${cfg.accountId}`,
-    dateRanges: [{ startDate: range.start, endDate: range.end }],
-    dimensions: [{ name: 'date' }, { name: 'sessionDefaultChannelGroup' }],
-    metrics: [{ name: 'activeUsers' }, { name: 'sessions' }, { name: 'averageSessionDuration' }],
-  })
-  return resp as Ga4Response
-}
-
-async function runKeyEvents(cfg: ConnectorConfig, range: { start: string; end: string }) {
-  const [resp] = await client(cfg).runReport({
-    property: `properties/${cfg.accountId}`,
-    dateRanges: [{ startDate: range.start, endDate: range.end }],
-    dimensions: [{ name: 'date' }, { name: 'eventName' }],
-    metrics: [{ name: 'eventCount' }],
-    dimensionFilter: {
-      filter: {
-        fieldName: 'eventName',
-        inListFilter: { values: [...KEY_EVENTS] },
-      },
-    },
-  })
-  return resp as Ga4Response
-}
-
-function mergeKeyEvents(base: DailyMetrics[], resp: Ga4Response): DailyMetrics[] {
+export function mergeKeyEvents(base: DailyMetrics[], resp: Resp): DailyMetrics[] {
   const map = new Map(base.map((d) => [d.date, d]))
   for (const row of resp.rows ?? []) {
     const date = ymd(row.dimensionValues?.[0]?.value ?? '')
@@ -581,330 +384,252 @@ function mergeKeyEvents(base: DailyMetrics[], resp: Ga4Response): DailyMetrics[]
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
-export const ga4Connector: Connector = {
-  platform: 'ga4',
-  async fetchDaily(cfg, range) {
-    const traffic = normalizeGa4(await runTraffic(cfg, range))
-    return mergeKeyEvents(traffic, await runKeyEvents(cfg, range))
-  },
-  async getStatus(cfg) {
-    try {
-      if (!cfg.credentials || !cfg.accountId) return { ok: false, error: 'not configured' }
-      const today = new Date().toISOString().slice(0, 10)
-      await runTraffic(cfg, { start: today, end: today })
-      return { ok: true }
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'unknown error' }
-    }
-  },
+function client(cred: Ga4Credentials): BetaAnalyticsDataClient {
+  return new BetaAnalyticsDataClient({
+    credentials: { client_email: cred.clientEmail, private_key: cred.privateKey },
+    projectId: cred.projectId,
+  })
+}
+
+export async function fetchGa4Daily(cred: Ga4Credentials, range: { start: string; end: string }): Promise<DailyMetrics[]> {
+  const c = client(cred)
+  const property = `properties/${cred.propertyId}`
+  const [traffic] = await c.runReport({
+    property,
+    dateRanges: [{ startDate: range.start, endDate: range.end }],
+    dimensions: [{ name: 'date' }, { name: 'sessionDefaultChannelGroup' }],
+    metrics: [{ name: 'activeUsers' }, { name: 'sessions' }, { name: 'averageSessionDuration' }],
+  })
+  const [events] = await c.runReport({
+    property,
+    dateRanges: [{ startDate: range.start, endDate: range.end }],
+    dimensions: [{ name: 'date' }, { name: 'eventName' }],
+    metrics: [{ name: 'eventCount' }],
+    dimensionFilter: { filter: { fieldName: 'eventName', inListFilter: { values: [...KEY_EVENTS] } } },
+  })
+  return mergeKeyEvents(normalizeGa4(traffic as Resp), events as Resp)
+}
+
+export async function ga4Status(cred: Ga4Credentials): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const today = new Date().toISOString().slice(0, 10)
+    await client(cred).runReport({
+      property: `properties/${cred.propertyId}`,
+      dateRanges: [{ startDate: today, endDate: today }],
+      metrics: [{ name: 'activeUsers' }],
+    })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'unknown error' }
+  }
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 6: Run test to verify it passes**
 
 Run: `pnpm test lib/connectors/ga4.test.ts`
-Expected: PASS.
+Expected: PASS (2 tests).
 
-- [ ] **Step 6: Create registry** — `lib/connectors/index.ts`
+- [ ] **Step 7: Registry** — `lib/connectors/index.ts`
 
 ```ts
-import type { Connector, Platform } from './types'
-import { ga4Connector } from './ga4'
-
-const registry: Partial<Record<Platform, Connector>> = {
-  ga4: ga4Connector,
-}
-
-export function getConnector(platform: Platform): Connector | null {
-  return registry[platform] ?? null
-}
 export * from './types'
+export { fetchGa4Daily, ga4Status, normalizeGa4, mergeKeyEvents } from './ga4'
 ```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/connectors lib/ga4-config.ts
+git commit -m "feat: GA4 connector (service account from env) + normalization tests"
+```
+
+---
+
+## Task 3: Cached GA4 service + dashboard reads real GA4 + refresh
+
+**Files:**
+- Create: `lib/ga4-service.ts`, `app/(app)/dashboard/actions.ts`
+- Modify: `components/Ga4Panel.tsx`, `app/(app)/dashboard/page.tsx`
+
+**Interfaces:**
+- Consumes: `getGa4Credentials`, `isGa4Configured` (Task 2); `fetchGa4Daily`; `DailyMetrics`.
+- Produces: `getGa4Range(start, end): Promise<DailyMetrics[]>` (cached), `getGa4Day(date): Promise<DailyMetrics | null>`, `refreshGa4(): Promise<void>` (revalidates the GA4 cache tag).
+
+- [ ] **Step 1: Cached service** — `lib/ga4-service.ts`
+
+```ts
+import 'server-only'
+import { unstable_cache, revalidateTag } from 'next/cache'
+import { getGa4Credentials } from '@/lib/ga4-config'
+import { fetchGa4Daily, type DailyMetrics } from '@/lib/connectors'
+
+const TAG = 'ga4'
+
+const cachedRange = unstable_cache(
+  async (start: string, end: string): Promise<DailyMetrics[]> => {
+    const cred = getGa4Credentials()
+    if (!cred) return []
+    return fetchGa4Daily(cred, { start, end })
+  },
+  ['ga4-range'],
+  { revalidate: 3600, tags: [TAG] }
+)
+
+export async function getGa4Range(start: string, end: string): Promise<DailyMetrics[]> {
+  return cachedRange(start, end)
+}
+
+export async function getGa4Day(date: string): Promise<DailyMetrics | null> {
+  const rows = await cachedRange(date, date)
+  return rows[0] ?? null
+}
+
+export async function refreshGa4(): Promise<void> {
+  revalidateTag(TAG)
+}
+```
+
+- [ ] **Step 2: Refresh action** — `app/(app)/dashboard/actions.ts`
+
+```ts
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { refreshGa4 } from '@/lib/ga4-service'
+
+export async function refreshGa4Action(): Promise<void> {
+  await refreshGa4()
+  revalidatePath('/dashboard')
+}
+```
+
+- [ ] **Step 3: Make `Ga4Panel` prop-driven with empty state** — `components/Ga4Panel.tsx`
+
+Change to accept typed props: `{ visitors?: number; sessions?: number; avgEngagementSec?: number; keyEvents?: { name: string; label: string; value: number }[]; organicBySource?: { source: string; value: number }[] }`. If `visitors === undefined`, render an empty state: `GA4 未配置 · 在 Vercel 环境变量设置 GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON`. Otherwise render the existing stat row (访客/Sessions/平均停留) + Key Events bars + 流量结构 bars using the props. Keep styling.
+
+- [ ] **Step 4: Dashboard reads real GA4** — `app/(app)/dashboard/page.tsx`
+
+For the GA4 panel only:
+
+```tsx
+import { getGa4Day } from '@/lib/ga4-service'
+import { KEY_EVENTS } from '@/lib/connectors'
+
+const KEY_EVENT_LABELS: Record<string, string> = {
+  job_search_start: '开始查询职业',
+  job_search_submit: '提交查询',
+  result_view: '查看结果',
+}
+// inside the async component:
+const ga4Day = await getGa4Day(REPORT_DATE)
+const ga4Props = ga4Day
+  ? {
+      visitors: ga4Day.visitors,
+      sessions: ga4Day.sessions,
+      avgEngagementSec: ga4Day.avgEngagementSec,
+      keyEvents: KEY_EVENTS.map((k) => ({ name: k, label: KEY_EVENT_LABELS[k], value: ga4Day.keyEvents?.[k] ?? 0 })),
+      organicBySource: Object.entries(ga4Day.organicBySource ?? {})
+        .map(([source, value]) => ({ source, value }))
+        .sort((a, b) => b.value - a.value),
+    }
+  : {}
+```
+
+Pass `{...ga4Props}` to `<Ga4Panel />`. Make the page a Server Component (`export default async function`). Leave channel table / spend trend / visitor trend / advice on mock data for now (Google/Meta/X land in later phases) — add a `// TODO(next phase): real Google/Meta/X` comment. Keep the "示例数据·原型" badge but change GA4 panel to reflect real/empty state.
+
+- [ ] **Step 5: Wire refresh button** — `components/TopBar.tsx`
+
+Wrap the refresh button in a `<form action={refreshGa4Action}>` (import the action) so clicking revalidates GA4. Keep the spin animation on submit via `useFormStatus` (optional) — minimal change is fine.
+
+- [ ] **Step 6: Verify build**
+
+Run: `pnpm build`
+Expected: compiles.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add lib/connectors
-git commit -m "feat: connector interface + GA4 connector (service account)"
+git add lib/ga4-service.ts app/(app)/dashboard components/Ga4Panel.tsx components/TopBar.tsx
+git commit -m "feat: cached live GA4 fetch + dashboard reads real GA4 + refresh"
 ```
 
 ---
 
-## Task 5: Connections repo + save/refresh actions + real Connections page
+## Task 4: Connections page → GA4 status (read-only) + deploy
 
 **Files:**
-- Create: `lib/connections-repo.ts`, `app/(app)/connections/actions.ts`
 - Modify: `app/(app)/connections/page.tsx`
+- Create: `app/(app)/connections/actions.ts` (test-connection action)
 
 **Interfaces:**
-- Consumes: `db`, `connections` (Task 1); `encrypt` (Task 2); `getConnector` (Task 4).
-- Produces:
-  - `listConnections(): Promise<Connection[]>`
-  - `getConnection(platform): Promise<Connection | undefined>`
-  - `saveGa4Credential(propertyId: string, serviceAccountJson: string): Promise<void>` (server action) — validates JSON, encrypts, upserts row with status via `getStatus`.
+- Consumes: `isGa4Configured`, `getGa4Credentials` (Task 2); `ga4Status` (Task 2).
 
-- [ ] **Step 1: Create repo** — `lib/connections-repo.ts`
-
-```ts
-import 'server-only'
-import { eq } from 'drizzle-orm'
-import { db, connections, type Connection } from '@/db'
-import type { Platform } from '@/lib/connectors'
-
-export async function listConnections(): Promise<Connection[]> {
-  return db.select().from(connections)
-}
-
-export async function getConnection(platform: Platform): Promise<Connection | undefined> {
-  const [row] = await db.select().from(connections).where(eq(connections.platform, platform))
-  return row
-}
-
-export async function upsertConnection(row: {
-  platform: Platform
-  label: string
-  accountId: string | null
-  credentials: string | null
-  status: 'connected' | 'error' | 'disconnected'
-  lastError: string | null
-}): Promise<void> {
-  await db
-    .insert(connections)
-    .values({ ...row, updatedAt: new Date() })
-    .onConflictDoUpdate({
-      target: connections.platform,
-      set: { ...row, updatedAt: new Date() },
-    })
-}
-```
-
-- [ ] **Step 2: Create actions** — `app/(app)/connections/actions.ts`
+- [ ] **Step 1: Test-connection action** — `app/(app)/connections/actions.ts`
 
 ```ts
 'use server'
 
-import { z } from 'zod'
-import { encrypt } from '@/lib/crypto'
-import { getConnector } from '@/lib/connectors'
-import { upsertConnection } from '@/lib/connections-repo'
-import { revalidatePath } from 'next/cache'
+import { getGa4Credentials } from '@/lib/ga4-config'
+import { ga4Status } from '@/lib/connectors'
 
-const saJsonSchema = z.object({
-  type: z.literal('service_account'),
-  client_email: z.string().email(),
-  private_key: z.string().min(1),
-  project_id: z.string().min(1),
-})
-
-export async function saveGa4Credential(formData: FormData): Promise<void> {
-  const propertyId = String(formData.get('propertyId') ?? '').trim()
-  const raw = String(formData.get('serviceAccountJson') ?? '').trim()
-  if (!propertyId) throw new Error('请填写 GA4 Property ID')
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error('服务账号 JSON 格式无效')
-  }
-  const sa = saJsonSchema.parse(parsed)
-
-  const credentials = encrypt(JSON.stringify(sa))
-  const connector = getConnector('ga4')!
-  const status = await connector.getStatus({ accountId: propertyId, credentials })
-
-  await upsertConnection({
-    platform: 'ga4',
-    label: 'GA4',
-    accountId: propertyId,
-    credentials,
-    status: status.ok ? 'connected' : 'error',
-    lastError: status.ok ? null : (status.error ?? 'unknown error'),
-  })
-  revalidatePath('/connections')
-  revalidatePath('/dashboard')
+export async function testGa4(): Promise<{ ok: boolean; error?: string }> {
+  const cred = getGa4Credentials()
+  if (!cred) return { ok: false, error: '未配置 GA4 环境变量' }
+  return ga4Status(cred)
 }
 ```
 
-- [ ] **Step 3: Wire the Connections page to real data** — `app/(app)/connections/page.tsx`
+- [ ] **Step 2: Update connections page** — `app/(app)/connections/page.tsx`
 
-Replace the static `connections` import with `await listConnections()`. Keep the four cards, but derive each card's status/accountId from the DB rows (falling back to `disconnected` when a platform has no row). For the GA4 card, render a small form (property ID input + textarea for the SA JSON + submit) that calls `saveGa4Credential`. Keep the other three platforms as visual placeholders (their save actions come in later phases). Preserve existing styling and status badges.
+Make it a Server Component. For the GA4 card, derive status from `isGa4Configured()` → badge "已连接" (configured) or "未连接". Show the env-var setup hint (`GA4_PROPERTY_ID`, `GA4_SERVICE_ACCOUNT_JSON` set in Vercel) instead of an in-app paste form. Keep Google/Meta/X cards as placeholders. Keep styling. (A "测试连接" button calling `testGa4` is optional/nice-to-have.)
 
-- [ ] **Step 4: Verify build**
+- [ ] **Step 3: Verify build**
 
 Run: `pnpm build`
 Expected: compiles.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add lib/connections-repo.ts app/(app)/connections
-git commit -m "feat: connections repo + GA4 credential save action + real connections page"
+git add app/(app)/connections
+git commit -m "feat: connections page shows GA4 env-config status"
 ```
 
----
-
-## Task 6: Report service (snapshot cache + refresh) and dashboard reads real GA4
-
-**Files:**
-- Create: `lib/report-service.ts`, `app/(app)/dashboard/actions.ts`
-- Modify: `app/(app)/dashboard/page.tsx`, `components/Ga4Panel.tsx`
-
-**Interfaces:**
-- Consumes: `db`, `reportSnapshots` (Task 1); `getConnector`, `getConnection` (Tasks 4–5); `DailyMetrics`.
-- Produces:
-  - `getDailyMetrics(platform, date): Promise<DailyMetrics | null>` — reads snapshot cache.
-  - `getRange(platform, start, end): Promise<DailyMetrics[]>`
-  - `refreshPlatform(platform, range): Promise<void>` — calls connector, upserts snapshots.
-
-- [ ] **Step 1: Create report service** — `lib/report-service.ts`
-
-```ts
-import 'server-only'
-import { and, eq, gte, lte } from 'drizzle-orm'
-import { db, reportSnapshots } from '@/db'
-import { getConnection } from '@/lib/connections-repo'
-import { getConnector, type DailyMetrics, type Platform } from '@/lib/connectors'
-
-export async function getRange(platform: Platform, start: string, end: string): Promise<DailyMetrics[]> {
-  const rows = await db
-    .select()
-    .from(reportSnapshots)
-    .where(and(eq(reportSnapshots.platform, platform), gte(reportSnapshots.date, start), lte(reportSnapshots.date, end)))
-  return rows.map((r) => r.metrics as DailyMetrics).sort((a, b) => a.date.localeCompare(b.date))
-}
-
-export async function getDailyMetrics(platform: Platform, date: string): Promise<DailyMetrics | null> {
-  const rows = await getRange(platform, date, date)
-  return rows[0] ?? null
-}
-
-export async function refreshPlatform(platform: Platform, range: { start: string; end: string }): Promise<void> {
-  const conn = await getConnection(platform)
-  const connector = getConnector(platform)
-  if (!conn || !connector) return
-  const daily = await connector.fetchDaily({ accountId: conn.accountId, credentials: conn.credentials }, range)
-  for (const m of daily) {
-    await db
-      .insert(reportSnapshots)
-      .values({ platform, date: m.date, metrics: m, source: 'api' })
-      .onConflictDoUpdate({
-        target: [reportSnapshots.platform, reportSnapshots.date],
-        set: { metrics: m, fetchedAt: new Date(), source: 'api' },
-      })
-  }
-}
-```
-
-- [ ] **Step 2: Create dashboard refresh action** — `app/(app)/dashboard/actions.ts`
-
-```ts
-'use server'
-
-import { revalidatePath } from 'next/cache'
-import { refreshPlatform } from '@/lib/report-service'
-
-export async function refreshGa4(): Promise<void> {
-  const end = new Date().toISOString().slice(0, 10)
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - 29)
-  const start = startDate.toISOString().slice(0, 10)
-  await refreshPlatform('ga4', { start, end })
-  revalidatePath('/dashboard')
-}
-```
-
-- [ ] **Step 3: Make `Ga4Panel` accept props** — `components/Ga4Panel.tsx`
-
-Change the component to accept `{ visitors, sessions, avgEngagementSec, keyEvents, organicBySource }` as props (typed) instead of importing the mock `ga4`. Add a graceful empty state: if `visitors` is undefined, render "GA4 未连接 · 前往连接页" text. Keep the existing bar/stat markup for the connected case.
-
-- [ ] **Step 4: Read real GA4 in the dashboard** — `app/(app)/dashboard/page.tsx`
-
-For the GA4 section only: `const ga4Today = await getDailyMetrics('ga4', REPORT_DATE)`. Map it to `Ga4Panel` props (key events array built from `KEY_EVENTS` with labels, organicBySource entries sorted desc). If null, pass undefined so the panel shows the empty state. Wire the TopBar refresh button (or a form) to `refreshGa4`. Leave channel table / spend / visitor-trend on mock for now (those are Google/Meta/X, later phases) — annotate with a comment.
-
-- [ ] **Step 5: Verify build**
-
-Run: `pnpm build`
-Expected: compiles.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Set Vercel env vars**
 
 ```bash
-git add lib/report-service.ts app/(app)/dashboard components/Ga4Panel.tsx
-git commit -m "feat: report snapshot service + dashboard reads real GA4 data"
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # AUTH_SECRET value
+node --experimental-strip-types scripts/hash-users.ts 'yaku@team.com|Yaku|<pw1>' 'jason@team.com|Jason|<pw2>'   # AMD_USERS value
 ```
 
----
-
-## Task 7: Provision Postgres, set env, migrate, seed, deploy, verify
-
-**Files:**
-- Modify: `.env.local` (local, gitignored), Vercel project env
-- Create: `db/migrations/*` already generated in Task 1
-
-**Interfaces:**
-- Consumes: everything above.
-
-- [ ] **Step 1: Provision Vercel Postgres**
-
-Create a Vercel Postgres (Neon) store and link it to the `amd` project (Vercel dashboard → Storage → Create → Postgres → connect to `amd`). This injects `DATABASE_URL` (and related) into the project env. Pull locally:
-
-Run: `vercel env pull .env.local`
-Expected: `.env.local` now contains `DATABASE_URL`.
-
-- [ ] **Step 2: Generate and set the app secrets**
+Then, for `production` (and `preview`/`development` as needed):
 
 ```bash
-node -e "console.log('APP_ENCRYPTION_KEY=' + require('crypto').randomBytes(32).toString('base64'))"
-node -e "console.log('AUTH_SECRET=' + require('crypto').randomBytes(32).toString('base64'))"
-```
-
-Add both to `.env.local`, and add them to Vercel:
-
-```bash
-vercel env add APP_ENCRYPTION_KEY production
 vercel env add AUTH_SECRET production
+vercel env add AMD_USERS production
+vercel env add GA4_PROPERTY_ID production        # 298707336
+vercel env add GA4_SERVICE_ACCOUNT_JSON production   # paste the full service-account JSON (one line)
 ```
 
-(Also add to `preview`/`development` as needed.)
+- [ ] **Step 6: Deploy**
 
-- [ ] **Step 3: Run the migration against the DB**
+Run: `git push origin main` then `vercel deploy --prod --yes`
+Expected: production deploy succeeds.
 
-Run: `pnpm db:migrate`
-Expected: tables `users`, `connections`, `report_snapshots` created.
-
-- [ ] **Step 4: Seed users**
-
-```bash
-SEED_PW_YAKU='<pick>' SEED_PW_JASON='<pick>' pnpm db:seed
-```
-
-Expected: prints `seeded yaku@team.com` / `seeded jason@team.com`.
-
-- [ ] **Step 5: Deploy**
-
-Run: `vercel deploy --prod --yes`
-Expected: production deploy succeeds; `https://amd-ivory.vercel.app` served.
-
-- [ ] **Step 6: Verify end to end**
+- [ ] **Step 7: Verify end to end**
 
 - Visit `/dashboard` unauthenticated → redirected to `/login`.
 - Log in with a seeded user → dashboard loads.
-- Go to `/connections`, paste the GA4 property ID (`298707336`) + service-account JSON → card flips to "已连接" (or shows the API error).
-- Back on `/dashboard`, click refresh → GA4 panel shows real visitors / key events / organic sources.
-
-- [ ] **Step 7: Commit any config**
-
-```bash
-git add vercel.json package.json
-git commit -m "chore: deploy config for GA4 real-data phase"
-```
+- If GA4 env is set: GA4 panel shows real visitors / key events / organic sources; `/connections` shows GA4 "已连接".
+- If not set yet: GA4 panel shows the "未配置" empty state; other panels still show mock.
+- Click refresh → GA4 panel re-fetches.
 
 ---
 
 ## Self-Review Notes
 
-- **Spec coverage:** Auth (multi-account, seeded) ✓ Task 3; DB model (users/connections/report_snapshots) ✓ Task 1; encryption ✓ Task 2; connector framework + GA4 ✓ Task 4; connections page encrypted save ✓ Task 5; snapshot cache + dashboard real read ✓ Task 6; deploy/env ✓ Task 7. Google Ads / Meta / X connectors, Vercel Cron pre-pull, and AI recommendations are explicitly out of this phase (later plans).
-- **Out of scope (next phases):** GoogleAdsConnector, MetaAdsConnector (+ upload fallback), XAdsConnector (upload), channel-table/spend/visitor-trend real data, Vercel Cron daily pre-pull, E2E Playwright tests.
-- **Type consistency:** `Connector.fetchDaily(cfg, range)` and `getStatus(cfg)` signatures match across Tasks 4–6; `DailyMetrics` shape is the single source in `lib/connectors/types.ts`; `Platform` union identical everywhere.
-- **Known follow-ups:** `next lint`/eslint not configured (pre-push skips it); add eslint-config-next in a later chore. `getStatus` calls the live API on save — acceptable (one call), documented.
+- **Spec coverage (Option B, §2b):** env-var credentials ✓ Task 2; multi-account login from `AMD_USERS` ✓ Task 1; GA4 connector live fetch ✓ Task 2; Next.js caching + dashboard real read + refresh ✓ Task 3; connections status ✓ Task 4; all-Vercel deploy, no DB, no external bill ✓ Task 4. AES crypto, Postgres, Drizzle, snapshots explicitly deferred to the future DB phase.
+- **Out of scope (next phases):** Google Ads / Meta / X connectors, X manual upload (needs a store), cross-platform history, Vercel Cron pre-pull, AI recommendations, E2E Playwright.
+- **Type consistency:** `DailyMetrics` single source in `types.ts`; `Ga4Credentials` single source in `ga4-config.ts`; `fetchGa4Daily(cred, range)` / `ga4Status(cred)` signatures consistent across Tasks 2–4.
+- **Known follow-ups:** eslint not configured (pre-push skips lint); `unstable_cache` revalidate=3600 chosen to keep GA4 API calls low — refresh button forces revalidate.

@@ -36,6 +36,18 @@
 - 不做 AI 运营建议（仅预留槽）
 - X Ads 不做 API 直连（v1 走手动上传）
 
+## 2b. 存储与计费决策（Option B · 全 Vercel、零额外账单）
+
+用户要求全部落在 Vercel 生态、不产生外部账单。GA4 阶段采用**无数据库**方案：
+
+- **凭证**：GA4 服务账号 JSON + Property ID 存 **Vercel 环境变量**（本身即加密密钥存储），不自建 DB、不自建加密层。
+- **登录用户**：存成环境变量 `AMD_USERS`（JSON：`[{email,name,passwordHash}]`），Auth.js 从中校验。不建 users 表。
+- **数据**：GA4 数据**实时向 Data API 拉**（GA4 自带 30 天历史 → 趋势图无需自存），用 Next.js 缓存（`revalidate`/`unstable_cache`）兜频率；手动"刷新"= 重新验证缓存。
+- **计费**：托管/Cron/env/Auth.js/平台 API 全免费；唯一潜在账单是 Vercel Hobby→Pro（商用），仍是 Vercel 单一账单。
+- **DB 延后**：等接 X Ads 手动上传、跨平台历史时，再加 Vercel Marketplace 的 Neon Postgres（仍并入 Vercel 账单）。届时 §4 的数据模型重新启用。
+
+> 因此本阶段 §3 中的 Postgres/Drizzle、§4 数据模型、§6 的 AES 加密层**暂不实现**，标记为 DB 阶段再启用。
+
 ## 3. 技术栈
 
 - **Next.js 15（App Router）+ TypeScript**，部署 Vercel。所有平台 API 调用在 server 端，token 绝不进浏览器 bundle。
