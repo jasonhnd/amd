@@ -1,0 +1,147 @@
+version: 1
+adapters:
+  work_items: github      # Work items are GitHub issues.
+  workspace: git-worktree # Work happens in git worktrees.
+  conductor: codex-cli    # Transparency only: the human session that conducts.
+  worker: codex           # Default worker provider.
+  vcs: github             # GitHub hosts PRs and checks.
+  verifier: claude        # Should differ from worker; provider registry key.
+  gate: human-merge       # First-run safe default: humans choose what promotes to production.
+worker:
+  # Optional. Absent = inherit the worker provider's global config. loopcoder never sets this on its own.
+  # model:
+  # Optional. Absent = inherit the worker provider's global config. loopcoder never sets this on its own.
+  # reasoning_effort:
+  base_branch: main
+  command_hint: "implement the issue, run relevant checks, commit"
+environment:
+  pre_prod_branch: pre-prod # Tick auto-merges clean PRs here only; promote is the separate production step.
+ci:
+  checks: []           # No hosted GitHub Actions checks; verification relies on loopreview + local gates + human merge.
+  build: pnpm build    # Local build gate run by `loopcoder verify-local`.
+  tests: pnpm test     # Local test gate (Vitest).
+# evidence:
+#   # Optional. Tick copies configured evidence onto dispatched, pending, and pre-prod report items.
+#   website:
+#     preview_url: https://preview.example.com
+#   cli:
+#     example_output: |
+#       $ loopcoder --version
+#       version=dev commit=unknown date=unknown
+#   library:
+#     test_results: go test ./...
+#   app:
+#     preview_build: dist/app-preview.zip
+# domain:
+#   # Optional. Absent = current code profile; later 0.5.0 slices consume these plug points.
+#   name: docs
+#   description: corporate IR document production
+#   skills:
+#     # Optional. Ordered repo-relative skill file globs.
+#     paths:
+#       - .claude/skills/*/SKILL.md
+#     machine_library:
+#       # Optional. Repo-relative machine-readable skill metadata globs.
+#       paths:
+#         - .loopcoder/skill-library/**/*.md
+#     # Optional. Skill names, path stems, or tags to include.
+#     select:
+#       - governance
+#     # Optional. Absent = current default prompt budget.
+#     prompt_budget_bytes: 4096
+#   verification:
+#     rubric:
+#       # Optional. Repo files copied into the review rubric packet.
+#       paths:
+#         - governance/qa-checklist.md
+#       # Optional. Inline rubric checklist items.
+#       checklist:
+#         - Rendered artifact matches the approved spec.
+#     # Optional. Top-level loopreview packet section order.
+#     review_packet_order:
+#       - rendered_artifact
+#       - rubric
+#       - changed_files
+#       - diff
+#       - issue
+#       - spec
+#   evidence:
+#     producer:
+#       # Optional. Command run in the PR worktree before loopreview packet construction.
+#       command: make render
+#       outputs:
+#         - out/report.pdf
+#       timeout_seconds: 300
+#       include_in_loopreview: true
+#   red_lines:
+#     - category: disclosure-compliance
+#       detail: unresolved disclosure or legal approval requirement
+#       path_globs:
+#         - disclosure/**
+#   partial_work:
+#     # Optional. harvest-needs-human|report-only; absent = current behavior.
+#     mode: harvest-needs-human
+#   liveness:
+#     # Optional. worktree-mtime|log-only|custom; absent = current behavior.
+#     mode: worktree-mtime
+# mcp:
+#   # Optional. MCP servers are declared only; provider wiring lands in later 0.5.0 slices.
+#   servers:
+#     - name: governance-index
+#       transport: stdio
+#       command: ./tools/governance-mcp
+#       args: ["--root", "."]
+#       roles: [worker, verifier]
+#       read_only: true
+#     - name: disclosure-system
+#       transport: http
+#       url: https://mcp.example.com/disclosure
+#       auth:
+#         header: Authorization
+#         env: DISCLOSURE_MCP_TOKEN
+#       roles: [worker]
+#       read_only: false
+# verifier:
+#   # Optional. Absent = inherit the verifier provider's global config. loopcoder never sets this on its own.
+#   # model:
+#   # Optional. Absent = inherit the verifier provider's global config. loopcoder never sets this on its own.
+#   # reasoning_effort:
+# resilience:
+#   worker:
+#     # Optional. Absent = 15; expected worker heartbeat cadence in seconds.
+#     heartbeat_interval_seconds: 15
+#     # Optional. Absent = 120; mark progress stale after this many seconds without phase or log growth.
+#     stale_after_seconds: 120
+#     # Optional. Absent = 300; classify hung after stale progress or stale sidecar with no live process.
+#     hung_after_seconds: 300
+#     # Optional. Absent = 3; maximum attempts before blocking for a human decision.
+#     max_attempts: 3
+#     # Optional. Absent = [10, 30, 120]; retry backoff schedule between attempts.
+#     retry_backoff_seconds: [10, 30, 120]
+ci:
+  checks: []
+  # Optional. Absent = no local test command gate.
+  # tests:
+  #   - go test ./...
+  # Optional. Absent = no local typecheck command gate.
+  # typecheck:
+  #   - go vet ./...
+  # Optional. Absent = no local build command gate.
+  # build:
+  #   - go build ./...
+# verification:
+#   # Optional. Absent = true for loopcoder code PRs.
+#   spec_required: true
+#   # Optional. Absent = 3.
+#   max_fix_passes: 3
+#   browser:
+#     # Optional. auto|always|never; absent = auto.
+#     enabled: auto
+#     # Optional. Changed-path patterns that trigger browser verification in auto mode.
+#     globs:
+#       - web/**
+#       - app/**
+#       - "**/*.css"
+#       - "**/*.tsx"
+report:
+  channel: chat
