@@ -2,3 +2,6 @@
 verifyDepsBeforeRun: false
 strictDepBuilds: false
 onlyBuiltDependencies: []
+allowBuilds:
+  protobufjs: set this to true or false
+  sharp: set this to true or false
