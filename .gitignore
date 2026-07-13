@@ -16,3 +16,6 @@ dist/
 .DS_Store
 *.log
 .vercel
+
+# TS incremental build info (generated)
+*.tsbuildinfo
