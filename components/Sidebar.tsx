@@ -1,10 +1,10 @@
 'use client'
 
+import { UserButton } from '@clerk/nextjs'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, PlugZap, LogOut } from 'lucide-react'
+import { LayoutDashboard, PlugZap } from 'lucide-react'
 import clsx from 'clsx'
-import { doSignOut } from '@/app/(app)/actions'
 
 const nav = [
   { href: '/dashboard', label: '看板', icon: LayoutDashboard },
@@ -60,15 +60,7 @@ export function Sidebar() {
             <div className="truncate text-[13px] font-medium">Yaku</div>
             <div className="truncate text-[11px] text-[var(--color-ink-faint)]">556 / Mirai</div>
           </div>
-          <form action={doSignOut}>
-            <button
-              type="submit"
-              className="text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink)]"
-              aria-label="退出"
-            >
-              <LogOut size={16} />
-            </button>
-          </form>
+          <UserButton />
         </div>
       </div>
     </aside>

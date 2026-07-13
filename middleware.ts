@@ -1,16 +1,17 @@
-import NextAuth from 'next-auth'
-import { authConfig } from '@/auth.config'
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
-const { auth } = NextAuth(authConfig)
+const isPublicRoute = createRouteMatcher(['/sign-in(.*)', '/__clerk(.*)'])
 
-export default auth((req) => {
-  const { pathname } = req.nextUrl
-
-  if (!req.auth && !pathname.startsWith('/login') && !pathname.startsWith('/api/auth')) {
-    return Response.redirect(new URL('/login', req.nextUrl.origin))
+export default clerkMiddleware(async (auth, req) => {
+  if (!isPublicRoute(req)) {
+    await auth.protect()
   }
 })
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    '/__clerk/:path*',
+    '/(api|trpc)(.*)',
+  ],
 }
