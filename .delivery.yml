@@ -16,10 +16,6 @@ worker:
   command_hint: "implement the issue, run relevant checks, commit"
 environment:
   pre_prod_branch: pre-prod # Tick auto-merges clean PRs here only; promote is the separate production step.
-ci:
-  checks: []           # No hosted GitHub Actions checks; verification relies on loopreview + local gates + human merge.
-  build: pnpm build    # Local build gate run by `loopcoder verify-local`.
-  tests: pnpm test     # Local test gate (Vitest).
 # evidence:
 #   # Optional. Tick copies configured evidence onto dispatched, pending, and pre-prod report items.
 #   website:
@@ -119,16 +115,11 @@ ci:
 #     # Optional. Absent = [10, 30, 120]; retry backoff schedule between attempts.
 #     retry_backoff_seconds: [10, 30, 120]
 ci:
-  checks: []
-  # Optional. Absent = no local test command gate.
-  # tests:
-  #   - go test ./...
-  # Optional. Absent = no local typecheck command gate.
-  # typecheck:
-  #   - go vet ./...
-  # Optional. Absent = no local build command gate.
-  # build:
-  #   - go build ./...
+  checks: []           # No hosted GitHub Actions checks; verification = loopreview + local gates + human merge.
+  tests:
+    - pnpm test        # Vitest
+  build:
+    - pnpm build       # Next.js production build
 # verification:
 #   # Optional. Absent = true for loopcoder code PRs.
 #   spec_required: true
