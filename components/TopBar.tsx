@@ -1,11 +1,26 @@
 'use client'
 
+import { refreshGa4Action } from '@/app/(app)/dashboard/actions'
 import { Calendar, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { useFormStatus } from 'react-dom'
+
+function RefreshButton() {
+  const { pending } = useFormStatus()
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-70"
+      style={{ background: 'var(--color-accent)', borderRadius: 10 }}
+    >
+      <RefreshCw size={15} className={pending ? 'animate-spin' : ''} />
+      刷新
+    </button>
+  )
+}
 
 export function TopBar({ date }: { date: string }) {
-  const [spinning, setSpinning] = useState(false)
-
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--color-panel)] px-8 py-4">
       <div className="flex items-center gap-3">
@@ -30,17 +45,9 @@ export function TopBar({ date }: { date: string }) {
           <Calendar size={15} />
           <span className="tabular">{date}</span>
         </button>
-        <button
-          onClick={() => {
-            setSpinning(true)
-            setTimeout(() => setSpinning(false), 900)
-          }}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-          style={{ background: 'var(--color-accent)', borderRadius: 10 }}
-        >
-          <RefreshCw size={15} className={spinning ? 'animate-spin' : ''} />
-          刷新
-        </button>
+        <form action={refreshGa4Action}>
+          <RefreshButton />
+        </form>
       </div>
     </div>
   )
