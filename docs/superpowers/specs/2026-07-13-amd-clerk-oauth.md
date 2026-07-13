@@ -12,8 +12,9 @@
 ## 2. 采用 Clerk 最新约定（来自用户提供的官方 quickstart，规范性要求）
 
 - 安装 `@clerk/nextjs@latest`。
-- 中间件文件名用 **`proxy.ts`**（项目根，非 `src/`），内容 `clerkMiddleware()` 来自 `@clerk/nextjs/server`。
-- proxy matcher 必须包含 `'/__clerk/:path*'`（Clerk 自动代理路径）。
+- 中间件文件名用 **`middleware.ts`**（项目根，非 `src/`），内容 `clerkMiddleware()` 来自 `@clerk/nextjs/server`。
+  - **实测修正（2026-07-13）**：用户提供的 Clerk quickstart 写的是 `proxy.ts`，但那是 **Next.js 16** 的新约定。本项目在 **Next.js 15.5.20**——`proxy.ts` **不会被识别为中间件**（`middleware-manifest.json` 为空、`sortedMiddleware: []`、路由保护不加载）。因此本阶段用 `middleware.ts`。升级到 Next 16 后可改回 `proxy.ts`。
+- matcher 必须包含 `'/__clerk/:path*'`（Clerk 自动代理路径）。
 - `<ClerkProvider>` 放在 `app/layout.tsx` 的 `<body>` 内。
 - 组件只从 `@clerk/nextjs` 或 `@clerk/nextjs/server` 导入。
 - 用 `auth()`（来自 `@clerk/nextjs/server`，async/await）。
@@ -23,7 +24,7 @@
 ## 3. 要删除的 Auth.js 资产
 
 - `auth.ts`
-- `middleware.ts`（Auth.js 版；由 `proxy.ts` 取代）
+- `middleware.ts`（Auth.js 版内容整体替换为 Clerk 的 `clerkMiddleware()`，见 §4.2）
 - `app/api/auth/[...nextauth]/route.ts`（连同空目录）
 - `app/(app)/actions.ts`（`doSignOut` server action）
 - `lib/users.ts` 与 `lib/users.test.ts`
@@ -37,7 +38,7 @@
 - `pnpm add @clerk/nextjs`
 - `pnpm remove next-auth bcryptjs` + 移除 devDep `@types/bcryptjs`
 
-### 4.2 `proxy.ts`（项目根，新建）
+### 4.2 `middleware.ts`（项目根，新建；Next 15.5.20 用此名，非 `proxy.ts`）
 全站需登录：除登录页与 Clerk 内部路径外，一律 `auth.protect()`。
 
 ```ts
