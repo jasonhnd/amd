@@ -35,7 +35,8 @@
 - 连接器框架在 `lib/connectors/`；**GA4 已实现**（`lib/connectors/ga4.ts`，服务账号从环境变量读），归一化有单测。
 - GA4 实时拉取：`lib/ga4-service.ts`（`unstable_cache`，revalidate 3600，tag `ga4`），看板 GA4 面板读 `getGa4Day`。
 - **现状：GA4 环境变量尚未配置** → 看板 GA4 面板显示「GA4 未配置」空态。配好 `GA4_PROPERTY_ID=298707336` + `GA4_SERVICE_ACCOUNT_JSON=<服务账号JSON>`（Vercel 生产环境变量）即上线真实数据。用户需先建 GA4 服务账号（见 §8）。
-- **其余面板仍是示例数据**（`lib/mock-data.ts`）：渠道对比表、花费/访客趋势、CPC、点击占比、今日运营建议。Google Ads / Meta / X 连接器**尚未实现**。
+- Google Ads connector 已实现（`lib/connectors/google-ads.ts`）：用 Google Ads API GAQL 拉每日花费、展示、点击并归一化为 CPC / CTR / CPM。采用 Option B：`GOOGLE_ADS_DEVELOPER_TOKEN`、`GOOGLE_ADS_CUSTOMER_ID`、可选 `GOOGLE_ADS_LOGIN_CUSTOMER_ID`、`GOOGLE_ADS_SERVICE_ACCOUNT_JSON` 只放 Vercel 环境变量，不进 DB、不进客户端。
+- **其余面板仍是示例数据**（`lib/mock-data.ts`）：渠道对比表、花费/访客趋势、CPC、点击占比、今日运营建议尚未接 Google Ads 真实数据；Meta / X 连接器**尚未实现**。
 
 ### 6. 存储与计费决策（Option B）
 无数据库、全 Vercel、凭证放环境变量、零外部账单。用户明确要求不产生 Vercel 之外的账单。以后要接 X Ads 手动上传 / 跨平台历史时，再加 Vercel Marketplace 的 Neon Postgres（仍并入 Vercel 账单）。
@@ -50,7 +51,7 @@
 ### 8. 待办 / 下一步
 1. **接 GA4 真实数据**（就差凭证）：用户去 Google Cloud 建服务账号、启用 Analytics Data API、把服务账号邮箱加为 GA4 property `298707336` 的「查看者」、下载 JSON。然后配 Vercel `GA4_PROPERTY_ID` + `GA4_SERVICE_ACCOUNT_JSON` → 部署 → GA4 面板变真实。
 2. **确认/开启 Clerk 的 Google 社交登录**。
-3. **Google Ads / Meta Ads / X Ads 连接器**（后续阶段，目前 mock）。按 GA4 的 connector 模式复制；X Ads 走手动上传 xlsx 兜底、Meta 有 API-blocked 兜底。规划见 spec。
+3. **Google Ads 看板接线 + Meta Ads / X Ads 连接器**（后续阶段，目前 mock 渠道表）。Google Ads connector 已就绪但尚未替换 dashboard mock；X Ads 走手动上传 xlsx 兜底、Meta 有 API-blocked 兜底。规划见 spec。
 4. 可选：AI「今日运营建议」（v1 暂缓，规则版已在）、Vercel Cron 每日预拉、告警/异常检测层（竞品调研得出的差异化点）。
 5. 可选：Clerk 换**生产实例**（`pk_live`，需自己的 Google OAuth 凭证 + 域名配置）用于正式对外。
 
