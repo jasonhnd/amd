@@ -7,9 +7,13 @@ import { VisitorTrendChart } from '@/components/charts/VisitorTrendChart'
 import { CpcChart } from '@/components/charts/CpcChart'
 import { ClickShareChart } from '@/components/charts/ClickShareChart'
 import { DailyAdvice } from '@/components/DailyAdvice'
+import { getAdDashboardSlice } from '@/lib/ad-metrics-service'
+import { todayJst } from '@/lib/ad-metrics'
 import { KEY_EVENTS } from '@/lib/connectors'
 import { getGa4Day } from '@/lib/ga4-service'
-import { REPORT_DATE } from '@/lib/mock-data'
+
+/** Live connectors + JST "today" must not be frozen at build time. */
+export const dynamic = 'force-dynamic'
 
 const KEY_EVENT_LABELS: Record<(typeof KEY_EVENTS)[number], string> = {
   job_search_start: '开始查询职业',
@@ -45,7 +49,12 @@ function Panel({
 }
 
 export default async function DashboardPage() {
-  const ga4Day = await getGa4Day(REPORT_DATE)
+  const reportDate = todayJst()
+  const [adSlice, ga4Day] = await Promise.all([
+    getAdDashboardSlice(reportDate),
+    getGa4Day(reportDate),
+  ])
+
   const ga4Props = ga4Day
     ? {
         visitors: ga4Day.visitors,
@@ -64,31 +73,34 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <TopBar date={REPORT_DATE} />
+      <TopBar date={reportDate} />
       <div className="mx-auto max-w-[1180px] px-8 py-7">
         <div className="flex flex-col gap-6">
-          {/* TODO(next phase): real Google/Meta/X */}
-          <KpiCards />
+          <KpiCards
+            totals={adSlice.totals}
+            visitors={ga4Props.visitors}
+            sessions={ga4Props.sessions}
+          />
 
-          <Panel title="渠道表现对比" hint="花费 / 展示 / 点击 / CPC · 预算规则超标标黄">
-            <ChannelTable />
+          <Panel title="渠道表现对比" hint="live connectors · 预算规则超标标黄">
+            <ChannelTable channels={adSlice.channels} totals={adSlice.totals} />
           </Panel>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <Panel title="💸 近 30 天花费趋势" hint="JPY">
+            <Panel title="💸 近 30 天花费趋势" hint="示例数据 · 尚未接 live 历史">
               <SpendTrendChart />
             </Panel>
-            <Panel title="👥 近 30 天访客趋势" hint="按来源">
+            <Panel title="👥 近 30 天访客趋势" hint="示例数据 · 尚未接 GA4 区间">
               <VisitorTrendChart />
             </Panel>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[1fr_1fr_1.4fr]">
-            <Panel title="CPC 对比">
-              <CpcChart />
+            <Panel title="CPC 对比" hint="当日 live">
+              <CpcChart channels={adSlice.channels} />
             </Panel>
-            <Panel title="点击贡献占比">
-              <ClickShareChart />
+            <Panel title="点击贡献占比" hint="当日 live">
+              <ClickShareChart channels={adSlice.channels} />
             </Panel>
             <Panel title="GA4 站内质量">
               <Ga4Panel {...ga4Props} />
@@ -96,11 +108,11 @@ export default async function DashboardPage() {
           </div>
 
           <Panel title="💡 今日运营建议">
-            <DailyAdvice />
+            <DailyAdvice channels={adSlice.channels} ga4={ga4Props} />
           </Panel>
 
           <p className="pt-1 text-center text-[12px] text-[var(--color-ink-faint)]">
-            AMD v1 原型 · 示例数据 · 接入真实 API 后为实时数据
+            AMD v1 · 渠道 KPI / GA4 按需实时拉取 · 30 天趋势仍为示例
           </p>
         </div>
       </div>

@@ -1,109 +1,19 @@
-// 示例数据（原型用）。量级参考 reports-ecru-nu 的 2026-07-11 日报。
+// 示例数据（原型 / 趋势图占位用）。量级参考 reports-ecru-nu 的 2026-07-11 日报。
+// 渠道表 / KPI / CPC·点击占比 已改走 live connectors（lib/ad-metrics*）。
 // 全部为确定性数值，避免 SSR/客户端水合不一致。
 
 export const REPORT_DATE = '2026-07-11'
 
-export type Platform = 'google_ads' | 'meta_ads' | 'x_ads'
+// Re-export budget rules + status for any leftover consumers.
+export {
+  BUDGET_RULES,
+  channelStatus,
+  type AdPlatform as Platform,
+  type ChannelRow,
+  type ChannelStatus,
+} from './ad-metrics'
 
-export type ChannelRow = {
-  platform: Platform
-  name: string
-  spend: number // JPY
-  impressions: number
-  clicks: number
-  ctr: number // %
-  cpc: number // JPY
-  cpm: number // JPY
-  // 状态由预算规则推导
-}
-
-export const BUDGET_RULES: Record<Platform, { daily: number; line: number }> = {
-  google_ads: { daily: 1000, line: 2000 },
-  meta_ads: { daily: 1000, line: 1750 },
-  x_ads: { daily: 1000, line: 2000 },
-}
-
-// 今日各渠道（Google 特意超线以演示标黄）
-export const channels: ChannelRow[] = [
-  {
-    platform: 'google_ads',
-    name: 'Google Ads',
-    spend: 2180,
-    impressions: 4210,
-    clicks: 63,
-    ctr: 1.5,
-    cpc: 34.6,
-    cpm: 517.8,
-  },
-  {
-    platform: 'meta_ads',
-    name: 'Meta Ads',
-    spend: 1236,
-    impressions: 18900,
-    clicks: 142,
-    ctr: 0.75,
-    cpc: 8.7,
-    cpm: 65.4,
-  },
-  {
-    platform: 'x_ads',
-    name: 'X Ads',
-    spend: 614,
-    impressions: 9800,
-    clicks: 88,
-    ctr: 0.9,
-    cpc: 7.0,
-    cpm: 62.7,
-  },
-]
-
-export type ChannelStatus = 'ok' | 'warn'
-
-export function channelStatus(row: ChannelRow): {
-  level: ChannelStatus
-  label: string
-  assessment: string
-} {
-  const rule = BUDGET_RULES[row.platform]
-  if (row.spend > rule.line) {
-    return {
-      level: 'warn',
-      label: `超规则线 ¥${rule.line.toLocaleString()}`,
-      assessment: row.platform === 'google_ads' ? '先查 Search Terms，勿先加预算' : '检查素材与受众',
-    }
-  }
-  if (row.cpc > 80) {
-    return { level: 'warn', label: 'CPC 偏高', assessment: '检查搜索词与匹配类型' }
-  }
-  return { level: 'ok', label: '正常', assessment: '维持观察' }
-}
-
-export const totals = {
-  spendToday: channels.reduce((s, c) => s + c.spend, 0),
-  spendCumulative: 86420,
-  clicksToday: channels.reduce((s, c) => s + c.clicks, 0),
-  impressionsToday: channels.reduce((s, c) => s + c.impressions, 0),
-}
-
-// GA4 站点质量
-export const ga4 = {
-  visitors: 214,
-  sessions: 246,
-  avgEngagementSec: 78,
-  keyEvents: [
-    { name: 'job_search_start', label: '开始查询职业', value: 58 },
-    { name: 'job_search_submit', label: '提交查询', value: 41 },
-    { name: 'result_view', label: '查看结果', value: 33 },
-  ],
-  organicBySource: [
-    { source: 'Organic Search', value: 96 },
-    { source: 'Direct', value: 47 },
-    { source: 'Organic Social', value: 21 },
-    { source: 'Referral', value: 12 },
-  ],
-}
-
-// 30 天趋势（确定性生成）
+// 30 天趋势（确定性生成）— #16 有意保留 mock，避免半接历史序列
 const DAYS = 30
 function seededSeries(base: number, amp: number, phase: number): number[] {
   return Array.from({ length: DAYS }, (_, i) => {

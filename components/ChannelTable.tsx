@@ -1,11 +1,28 @@
-import { channels, channelStatus, totals } from '@/lib/mock-data'
+import {
+  channelStatus,
+  type ChannelRow,
+  type ChannelTotals,
+} from '@/lib/ad-metrics'
 
 function pct(part: number, whole: number) {
   return whole ? `${((part / whole) * 100).toFixed(1)}%` : '—'
 }
 
-export function ChannelTable() {
-  const clickTotal = channels.reduce((s, c) => s + c.clicks, 0)
+function metricCell(row: ChannelRow, formatted: string) {
+  if (row.availability !== 'live') {
+    return '—'
+  }
+  return formatted
+}
+
+export function ChannelTable({
+  channels,
+  totals,
+}: {
+  channels: ChannelRow[]
+  totals: ChannelTotals
+}) {
+  const clickTotal = totals.clicksToday
 
   return (
     <div className="overflow-x-auto">
@@ -28,46 +45,83 @@ export function ChannelTable() {
         <tbody className="tabular">
           {channels.map((c) => {
             const st = channelStatus(c)
+            const statusBg =
+              st.level === 'warn'
+                ? 'var(--color-warn-soft)'
+                : st.level === 'ok'
+                  ? 'var(--color-ok-soft)'
+                  : 'var(--color-line-soft)'
+            const statusColor =
+              st.level === 'warn'
+                ? 'var(--color-warn)'
+                : st.level === 'ok'
+                  ? 'var(--color-ok)'
+                  : 'var(--color-ink-faint)'
+
             return (
               <tr key={c.platform} className="border-b border-[var(--color-line-soft)]">
                 <td className="py-3 pr-4">
                   <span className="flex items-center gap-2 font-medium">
                     <span
                       className="inline-block h-2.5 w-2.5 rounded-full"
-                      style={{ background: `var(--color-${c.platform.replace('_ads', '')})` }}
+                      style={{
+                        background: `var(--color-${c.platform.replace('_ads', '')})`,
+                      }}
                     />
                     {c.name}
                   </span>
                 </td>
-                <td className="px-3 py-3 text-right">¥{c.spend.toLocaleString()}</td>
-                <td className="px-3 py-3 text-right">{c.impressions.toLocaleString()}</td>
-                <td className="px-3 py-3 text-right">{c.clicks}</td>
-                <td className="px-3 py-3 text-right">{c.ctr.toFixed(2)}%</td>
-                <td className="px-3 py-3 text-right">¥{c.cpc.toFixed(1)}</td>
-                <td className="px-3 py-3 text-right">¥{c.cpm.toFixed(0)}</td>
-                <td className="px-3 py-3 text-right">{pct(c.spend, totals.spendToday)}</td>
-                <td className="px-3 py-3 text-right">{pct(c.clicks, clickTotal)}</td>
+                <td className="px-3 py-3 text-right">
+                  {metricCell(c, `¥${c.spend.toLocaleString()}`)}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  {metricCell(c, c.impressions.toLocaleString())}
+                </td>
+                <td className="px-3 py-3 text-right">{metricCell(c, String(c.clicks))}</td>
+                <td className="px-3 py-3 text-right">
+                  {metricCell(c, `${c.ctr.toFixed(2)}%`)}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  {metricCell(c, `¥${c.cpc.toFixed(1)}`)}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  {metricCell(c, `¥${c.cpm.toFixed(0)}`)}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  {c.availability === 'live' ? pct(c.spend, totals.spendToday) : '—'}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  {c.availability === 'live' ? pct(c.clicks, clickTotal) : '—'}
+                </td>
                 <td className="px-3 py-3">
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap"
                     style={{
                       borderRadius: 999,
-                      background: st.level === 'warn' ? 'var(--color-warn-soft)' : 'var(--color-ok-soft)',
-                      color: st.level === 'warn' ? 'var(--color-warn)' : 'var(--color-ok)',
+                      background: statusBg,
+                      color: statusColor,
                     }}
                   >
                     {st.label}
                   </span>
                 </td>
-                <td className="py-3 pl-3 text-[12px] text-[var(--color-ink-soft)]">{st.assessment}</td>
+                <td className="py-3 pl-3 text-[12px] text-[var(--color-ink-soft)]">
+                  {st.assessment}
+                </td>
               </tr>
             )
           })}
           <tr className="font-semibold">
             <td className="py-3 pr-4">合计</td>
-            <td className="px-3 py-3 text-right">¥{totals.spendToday.toLocaleString()}</td>
-            <td className="px-3 py-3 text-right">{totals.impressionsToday.toLocaleString()}</td>
-            <td className="px-3 py-3 text-right">{clickTotal}</td>
+            <td className="px-3 py-3 text-right">
+              {totals.liveCount > 0 ? `¥${totals.spendToday.toLocaleString()}` : '—'}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {totals.liveCount > 0 ? totals.impressionsToday.toLocaleString() : '—'}
+            </td>
+            <td className="px-3 py-3 text-right">
+              {totals.liveCount > 0 ? clickTotal : '—'}
+            </td>
             <td colSpan={7} />
           </tr>
         </tbody>
