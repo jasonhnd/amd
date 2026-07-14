@@ -1,8 +1,9 @@
 'use client'
 
-import { refreshGa4Action } from '@/app/(app)/dashboard/actions'
 import { Calendar, RefreshCw } from 'lucide-react'
 import { useFormStatus } from 'react-dom'
+
+import { refreshSiteDataAction } from '@/app/(app)/sites/[slug]/dashboard/actions'
 
 function RefreshButton() {
   const { pending } = useFormStatus()
@@ -20,34 +21,50 @@ function RefreshButton() {
   )
 }
 
-export function TopBar({ date }: { date: string }) {
+export function TopBar({
+  date,
+  subtitle,
+  siteSlug,
+}: {
+  date: string
+  subtitle?: string
+  siteSlug?: string
+}) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--color-panel)] px-8 py-4">
       <div className="flex items-center gap-3">
-        <h1 className="text-lg font-semibold tracking-tight">📊 广告日报</h1>
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">📊 广告日报</h1>
+          {subtitle ? (
+            <div className="text-[12px] text-[var(--color-ink-faint)]">{subtitle}</div>
+          ) : null}
+        </div>
         <span
           className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
           style={{
-            background: 'var(--color-warn-soft)',
-            color: 'var(--color-warn)',
+            background: 'var(--color-ok-soft)',
+            color: 'var(--color-ok)',
             borderRadius: 999,
           }}
         >
-          示例数据 · 原型
+          站点 live · 站内凭证
         </span>
       </div>
 
       <div className="flex items-center gap-2">
         <button
+          type="button"
           className="flex items-center gap-2 rounded-lg border bg-[var(--color-panel)] px-3 py-2 text-sm text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
           style={{ borderRadius: 10 }}
         >
           <Calendar size={15} />
           <span className="tabular">{date}</span>
         </button>
-        <form action={refreshGa4Action}>
-          <RefreshButton />
-        </form>
+        {siteSlug ? (
+          <form action={refreshSiteDataAction.bind(null, siteSlug)}>
+            <RefreshButton />
+          </form>
+        ) : null}
       </div>
     </div>
   )

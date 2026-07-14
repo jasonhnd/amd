@@ -36,7 +36,7 @@ export function Ga4Panel({
       <div className="rounded-xl border border-dashed bg-[var(--color-surface)] px-4 py-6 text-center">
         <div className="text-[13px] font-medium text-[var(--color-ink-soft)]">GA4 未配置</div>
         <div className="mt-1 text-[12px] text-[var(--color-ink-faint)]">
-          在 Vercel 环境变量设置 GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON
+          在本站点「连接」页填写 Property ID 与 Service Account JSON
         </div>
       </div>
     )

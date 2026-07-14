@@ -1,10 +1,8 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 
-import { refreshGa4 } from '@/lib/ga4-service'
-
+/** Legacy action — refresh lives under site dashboard now. */
 export async function refreshGa4Action(): Promise<void> {
-  await refreshGa4()
-  revalidatePath('/dashboard')
+  redirect('/sites')
 }

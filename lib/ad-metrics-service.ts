@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { revalidateTag, unstable_cache } from 'next/cache'
+import { and, eq } from 'drizzle-orm'
 
 import {
   assembleChannelRows,
@@ -11,48 +12,40 @@ import {
   type ChannelTotals,
   type PlatformDayInput,
 } from '@/lib/ad-metrics'
+import {
+  getSiteGoogleAdsCredentials,
+  getSiteMetaAdsCredentials,
+  getConnectionRow,
+} from '@/lib/credentials/site'
 import { fetchGoogleAdsDaily } from '@/lib/connectors/google-ads'
 import { fetchMetaAdsDaily } from '@/lib/connectors/meta-ads'
-import { getGoogleAdsCredentials } from '@/lib/google-ads-config'
-import { getMetaAdsCredentials } from '@/lib/meta-ads-config'
-import { getXAdsLastUpload } from '@/lib/x-ads-upload'
+import { getDb } from '@/lib/db/client'
+import { sites, uploadSnapshots } from '@/lib/db/schema'
 import type { DailyMetrics } from '@/lib/connectors/types'
 
-const GOOGLE_ADS_CACHE_TAG = 'google_ads'
-const META_ADS_CACHE_TAG = 'meta_ads'
+function googleTag(siteId: string) {
+  return `google_ads:${siteId}`
+}
+function metaTag(siteId: string) {
+  return `meta_ads:${siteId}`
+}
+function xTag(siteId: string) {
+  return `x_ads:${siteId}`
+}
 
-const cachedGoogleAdsRange = unstable_cache(
-  async (start: string, end: string): Promise<DailyMetrics[]> => {
-    const credentials = getGoogleAdsCredentials()
-    if (!credentials) {
-      return []
-    }
-    return fetchGoogleAdsDaily(credentials, { start, end })
-  },
-  ['google-ads-range'],
-  { revalidate: 3600, tags: [GOOGLE_ADS_CACHE_TAG] }
-)
-
-const cachedMetaAdsRange = unstable_cache(
-  async (start: string, end: string): Promise<DailyMetrics[]> => {
-    const credentials = getMetaAdsCredentials()
-    if (!credentials) {
-      return []
-    }
-    return fetchMetaAdsDaily(credentials, { start, end })
-  },
-  ['meta-ads-range'],
-  { revalidate: 3600, tags: [META_ADS_CACHE_TAG] }
-)
-
-async function googleAdsDayInput(date: string): Promise<PlatformDayInput> {
-  const credentials = getGoogleAdsCredentials()
+async function googleAdsDayInput(siteId: string, orgId: string, date: string): Promise<PlatformDayInput> {
+  const credentials = await getSiteGoogleAdsCredentials(siteId, orgId)
   if (!credentials) {
     return { platform: 'google_ads', configured: false }
   }
 
   try {
-    const rows = await cachedGoogleAdsRange(date, date)
+    const cached = unstable_cache(
+      async () => fetchGoogleAdsDaily(credentials, { start: date, end: date }),
+      ['google-ads-day', siteId, date],
+      { revalidate: 3600, tags: [googleTag(siteId)] }
+    )
+    const rows = await cached()
     return {
       platform: 'google_ads',
       configured: true,
@@ -67,14 +60,19 @@ async function googleAdsDayInput(date: string): Promise<PlatformDayInput> {
   }
 }
 
-async function metaAdsDayInput(date: string): Promise<PlatformDayInput> {
-  const credentials = getMetaAdsCredentials()
+async function metaAdsDayInput(siteId: string, date: string): Promise<PlatformDayInput> {
+  const credentials = await getSiteMetaAdsCredentials(siteId)
   if (!credentials) {
     return { platform: 'meta_ads', configured: false }
   }
 
   try {
-    const rows = await cachedMetaAdsRange(date, date)
+    const cached = unstable_cache(
+      async () => fetchMetaAdsDaily(credentials, { start: date, end: date }),
+      ['meta-ads-day', siteId, date],
+      { revalidate: 3600, tags: [metaTag(siteId)] }
+    )
+    const rows = await cached()
     return {
       platform: 'meta_ads',
       configured: true,
@@ -89,26 +87,41 @@ async function metaAdsDayInput(date: string): Promise<PlatformDayInput> {
   }
 }
 
-async function xAdsDayInput(date: string): Promise<PlatformDayInput> {
-  const upload = await getXAdsLastUpload()
+async function xAdsDayInput(siteId: string, date: string): Promise<PlatformDayInput> {
+  const row = await getConnectionRow(siteId, 'x_ads')
+  const db = getDb()
+  const snaps = await db
+    .select()
+    .from(uploadSnapshots)
+    .where(
+      and(
+        eq(uploadSnapshots.siteId, siteId),
+        eq(uploadSnapshots.platform, 'x_ads'),
+        eq(uploadSnapshots.date, date)
+      )
+    )
+    .limit(1)
 
-  if (!upload) {
-    return { platform: 'x_ads', configured: false }
-  }
-
-  if (!upload.ok) {
+  if (snaps[0]) {
     return {
       platform: 'x_ads',
       configured: true,
-      error: upload.errors.join('; ') || 'X Ads upload invalid',
+      metrics: snaps[0].metrics as DailyMetrics,
     }
   }
 
-  return {
-    platform: 'x_ads',
-    configured: true,
-    metrics: metricsForDate(upload.metrics, date),
+  // Any upload history means "configured" but no day data
+  const any = await db
+    .select({ id: uploadSnapshots.id })
+    .from(uploadSnapshots)
+    .where(and(eq(uploadSnapshots.siteId, siteId), eq(uploadSnapshots.platform, 'x_ads')))
+    .limit(1)
+
+  if (any.length > 0 || row?.status === 'connected') {
+    return { platform: 'x_ads', configured: true, metrics: null }
   }
+
+  return { platform: 'x_ads', configured: false }
 }
 
 export type AdDashboardSlice = {
@@ -117,17 +130,32 @@ export type AdDashboardSlice = {
   totals: ChannelTotals
 }
 
-/**
- * Assemble channel table + spend KPIs for a day from live connectors.
- * Unconfigured platforms become honest empty rows (no mock yen).
- */
 export async function getAdDashboardSlice(
+  siteId: string,
   date: string = todayJst()
 ): Promise<AdDashboardSlice> {
+  const db = getDb()
+  const siteRows = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1)
+  const site = siteRows[0]
+  if (!site) {
+    return {
+      date,
+      channels: assembleChannelRows(
+        [
+          { platform: 'google_ads', configured: false },
+          { platform: 'meta_ads', configured: false },
+          { platform: 'x_ads', configured: false },
+        ],
+        date
+      ),
+      totals: sumChannelTotals([]),
+    }
+  }
+
   const [google, meta, x] = await Promise.all([
-    googleAdsDayInput(date),
-    metaAdsDayInput(date),
-    xAdsDayInput(date),
+    googleAdsDayInput(siteId, site.orgId, date),
+    metaAdsDayInput(siteId, date),
+    xAdsDayInput(siteId, date),
   ])
 
   const channels = assembleChannelRows([google, meta, x], date)
@@ -138,7 +166,8 @@ export async function getAdDashboardSlice(
   }
 }
 
-export async function refreshAdMetrics(): Promise<void> {
-  revalidateTag(GOOGLE_ADS_CACHE_TAG)
-  revalidateTag(META_ADS_CACHE_TAG)
+export async function refreshAdMetrics(siteId: string): Promise<void> {
+  revalidateTag(googleTag(siteId))
+  revalidateTag(metaTag(siteId))
+  revalidateTag(xTag(siteId))
 }
