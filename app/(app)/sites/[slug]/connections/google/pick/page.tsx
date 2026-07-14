@@ -1,21 +1,19 @@
 import { auth } from '@clerk/nextjs/server'
-import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { getOrgSecret } from '@/lib/credentials/site'
 import {
-  decodePendingCookie,
-  listGa4Properties,
-  listGoogleAdsCustomers,
-  refreshAccessToken,
-} from '@/lib/google-oauth'
+  getClerkGoogleAccessToken,
+  hasAdwordsScope,
+  hasAnalyticsScope,
+} from '@/lib/clerk-google'
+import { getOrgSecret } from '@/lib/credentials/site'
+import { listGa4Properties, listGoogleAdsCustomers } from '@/lib/google-oauth'
 import { requireSiteAccess } from '@/lib/sites/access'
 import { bindGoogleAccountsAction } from './actions'
+import { ReauthGoogleButton } from './ReauthGoogleButton'
 
 export const dynamic = 'force-dynamic'
-
-const COOKIE = 'amd_google_oauth_pending'
 
 export default async function GooglePickPage({
   params,
@@ -26,45 +24,96 @@ export default async function GooglePickPage({
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
+  await requireSiteAccess(slug, userId, 'editor')
   const { site } = await requireSiteAccess(slug, userId, 'editor')
-  const jar = await cookies()
-  const raw = jar.get(COOKIE)?.value
-  if (!raw) {
-    redirect(`/sites/${slug}/connections?err=google_session`)
+
+  const token = await getClerkGoogleAccessToken(userId)
+
+  if (!token) {
+    return (
+      <div className="mx-auto max-w-lg px-8 py-10">
+        <h1 className="text-xl font-semibold">需要 Google 登录权限</h1>
+        <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+          请用 <strong>Google 账号</strong>登录 AMD（侧栏账户），并在 Clerk 的 Google
+          连接里打开 Analytics 权限。无需你们自己的 GCP 项目。
+        </p>
+        <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-[var(--color-ink-soft)]">
+          <li>Clerk Dashboard → Social connections → Google</li>
+          <li>
+            在 Scopes 中加入：
+            <code className="block mt-1 text-[11px] break-all">
+              https://www.googleapis.com/auth/analytics.readonly
+              https://www.googleapis.com/auth/adwords
+            </code>
+          </li>
+          <li>保存后，点下方重新授权，再回到本页</li>
+        </ol>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <ReauthGoogleButton returnPath={`/sites/${slug}/connections/google/pick`} />
+          <Link
+            href={`/sites/${slug}/connections`}
+            className="rounded-lg border px-4 py-2 text-sm"
+            style={{ borderRadius: 10 }}
+          >
+            返回
+          </Link>
+        </div>
+      </div>
+    )
   }
 
-  let pending
+  const needAnalytics = !hasAnalyticsScope(token.scopes)
+  // adwords optional if scopes empty (Clerk sometimes omits scope list)
+  const scopesUnknown = token.scopes.length === 0
+
+  let properties: Awaited<ReturnType<typeof listGa4Properties>> = []
+  let propertiesError: string | null = null
   try {
-    pending = decodePendingCookie(raw)
-  } catch {
-    redirect(`/sites/${slug}/connections?err=google_session`)
+    properties = await listGa4Properties(token.accessToken)
+  } catch (e) {
+    propertiesError = e instanceof Error ? e.message : '无法列出 GA4'
   }
-
-  if (pending.siteId !== site.id || pending.clerkUserId !== userId) {
-    redirect(`/sites/${slug}/connections?err=google_mismatch`)
-  }
-
-  const accessToken = await refreshAccessToken(pending.refreshToken)
-  const properties = await listGa4Properties(accessToken)
 
   const developerToken = await getOrgSecret(site.orgId, 'google_ads_developer_token')
   let customers: { customerId: string }[] = []
   let adsError: string | null = null
-  if (developerToken) {
+  if (!developerToken) {
+    adsError = '尚未在「设置」填写组织 Developer Token（只填一次；仅 Ads 需要，纯 GA4 可跳过）'
+  } else if (!scopesUnknown && !hasAdwordsScope(token.scopes)) {
+    adsError = '当前 Google 授权未包含 Ads 权限，请重新授权'
+  } else {
     try {
-      customers = await listGoogleAdsCustomers(accessToken, developerToken)
+      customers = await listGoogleAdsCustomers(token.accessToken, developerToken)
     } catch (e) {
       adsError = e instanceof Error ? e.message : '无法列出 Google Ads 账户'
     }
-  } else {
-    adsError = '尚未配置组织 Developer Token — 请先在「设置」中填写（只需一次）'
+  }
+
+  if (propertiesError && properties.length === 0) {
+    return (
+      <div className="mx-auto max-w-lg px-8 py-10">
+        <h1 className="text-xl font-semibold">Google 权限不足</h1>
+        <p className="mt-2 text-sm text-[var(--color-warn)]">{propertiesError}</p>
+        <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+          {needAnalytics || scopesUnknown
+            ? '请在 Clerk → Google 连接中添加 analytics.readonly 范围后重新授权。'
+            : '请确认该 Google 账号能访问目标 GA4 属性。'}
+        </p>
+        <div className="mt-6 flex gap-3">
+          <ReauthGoogleButton returnPath={`/sites/${slug}/connections/google/pick`} />
+          <Link href={`/sites/${slug}/connections`} className="rounded-lg border px-4 py-2 text-sm">
+            返回
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="mx-auto max-w-xl px-8 py-10">
       <h1 className="text-xl font-semibold">选择要连接的账号</h1>
       <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-        Google 已授权。勾选本站点要用的 GA4 与 Google Ads 账户后保存。
+        使用你登录 AMD 的 Google 账号（经 Clerk，无需 GCP）。勾选后保存即可。
       </p>
 
       <form action={bindGoogleAccountsAction.bind(null, slug)} className="mt-8 flex flex-col gap-6">

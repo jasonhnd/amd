@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { STATUS_META } from '@/lib/connections'
 import { listConnectionStatuses } from '@/lib/credentials/site'
 import { isDatabaseConfigured } from '@/lib/db/client'
-import { isGoogleOAuthConfigured } from '@/lib/google-oauth'
+import { getClerkGoogleAccessToken } from '@/lib/clerk-google'
 import { roleAtLeast, requireSiteAccess } from '@/lib/sites/access'
 import { getXAdsLastUpload } from '@/lib/x-ads-upload'
 import {
@@ -64,7 +64,7 @@ export default async function SiteConnectionsPage({
   const rows = await listConnectionStatuses(site.id)
   const byPlatform = Object.fromEntries(rows.map((r) => [r.platform, r]))
   const xUpload = await getXAdsLastUpload(site.id)
-  const oauthReady = isGoogleOAuthConfigured()
+  const clerkGoogle = await getClerkGoogleAccessToken(userId)
   const googleOk = sp.google === 'ok'
   const err = typeof sp.err === 'string' ? sp.err : null
 
@@ -72,7 +72,7 @@ export default async function SiteConnectionsPage({
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-xl font-semibold tracking-tight">连接 · {site.name}</h1>
       <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-        优先一键连接 Google。X 用上传。Meta 可选。
+        用登录的 Google 选账号即可（经 Clerk，无需 GCP）。X 上传。Meta 可选。
         {!canEdit && ' 当前为只读角色。'}
       </p>
 
@@ -83,9 +83,7 @@ export default async function SiteConnectionsPage({
       ) : null}
       {err ? (
         <div className="mt-4 rounded-xl border px-4 py-3 text-sm text-[var(--color-warn)]">
-          {err === 'google_session'
-            ? 'Google 会话已过期，请重新点「用 Google 一键连接」。'
-            : err}
+          {err}
         </div>
       ) : null}
 
@@ -94,31 +92,29 @@ export default async function SiteConnectionsPage({
           className="mt-6 rounded-2xl border bg-[var(--color-panel)] p-6"
           style={{ borderRadius: 16 }}
         >
-          <h2 className="text-[15px] font-semibold">Google · 一键连接</h2>
+          <h2 className="text-[15px] font-semibold">Google · 选账号连接</h2>
           <p className="mt-1 text-[13px] text-[var(--color-ink-soft)]">
-            授权后选择 GA4 属性与 Google Ads 客户，无需粘贴 JSON。
+            不建 GCP、不贴 JSON。请先用 Google 登录 AMD；若权限不够，在 Clerk Dashboard
+            给 Google 连接加上 Analytics / Ads 范围后重新授权。
           </p>
-          {oauthReady ? (
-            <a
-              href={`/api/connectors/google/start?site=${encodeURIComponent(slug)}`}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#1a73e8] px-5 py-2.5 text-sm font-medium text-white"
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Link
+              href={`/sites/${slug}/connections/google/pick`}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#1a73e8] px-5 py-2.5 text-sm font-medium text-white"
               style={{ borderRadius: 10 }}
             >
-              用 Google 连接 GA4 + Ads
-            </a>
-          ) : (
-            <div className="mt-4 text-sm text-[var(--color-warn)]">
-              尚未配置 Google OAuth 客户端。需要在 Vercel 设置{' '}
-              <code className="text-xs">GOOGLE_OAUTH_CLIENT_ID</code> 与{' '}
-              <code className="text-xs">GOOGLE_OAUTH_CLIENT_SECRET</code>
-              。见下方说明。
-            </div>
-          )}
-          <p className="mt-3 text-[12px] text-[var(--color-ink-faint)]">
-            Ads 列表需要组织级 Developer Token：
-            <Link href={`/sites/${slug}/settings`} className="text-[var(--color-accent)] underline">
-              打开设置填写（全站一次）
+              {clerkGoogle ? '选择 GA4 / Ads 账号' : '继续 · 检查 Google 权限'}
             </Link>
+            <span className="text-[12px] text-[var(--color-ink-faint)]">
+              Google token：{clerkGoogle ? '已拿到' : '未拿到（需 Google 登录）'}
+            </span>
+          </div>
+          <p className="mt-3 text-[12px] text-[var(--color-ink-faint)]">
+            若要 Ads：
+            <Link href={`/sites/${slug}/settings`} className="text-[var(--color-accent)] underline">
+              设置里填一次 Developer Token
+            </Link>
+            （Google 政策要求，与 GCP 无关）
           </p>
         </section>
       ) : null}

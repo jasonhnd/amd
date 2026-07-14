@@ -1,5 +1,11 @@
 export type Ga4CredentialPayload =
   | {
+      /** Use Clerk Google OAuth token of connectedByUserId at fetch time — no GCP client. */
+      auth: 'clerk'
+      propertyId: string
+      connectedByUserId: string
+    }
+  | {
       auth: 'oauth'
       propertyId: string
       refreshToken: string
@@ -11,6 +17,13 @@ export type Ga4CredentialPayload =
     }
 
 export type GoogleAdsCredentialPayload =
+  | {
+      auth: 'clerk'
+      customerId: string
+      loginCustomerId?: string
+      connectedByUserId: string
+      developerToken?: string
+    }
   | {
       auth: 'oauth'
       customerId: string

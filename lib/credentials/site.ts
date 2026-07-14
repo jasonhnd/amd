@@ -9,6 +9,7 @@ import { connections, orgSecrets, type ConnectionPlatform } from '@/lib/db/schem
 import type { Ga4Credentials } from '@/lib/ga4-config'
 import type { GoogleAdsCredentials } from '@/lib/google-ads-config'
 import { DEFAULT_META_AD_ACCOUNT_ID, type MetaAdsCredentials } from '@/lib/meta-ads-config'
+import { getClerkGoogleAccessToken } from '@/lib/clerk-google'
 import { refreshAccessToken } from '@/lib/google-oauth'
 import type {
   Ga4CredentialPayload,
@@ -124,6 +125,15 @@ export async function getSiteGa4Credentials(siteId: string): Promise<Ga4Credenti
   if (!row?.credentialsEnc || row.status === 'disconnected') return null
   try {
     const payload = decryptJson<Ga4CredentialPayload>(row.credentialsEnc)
+    if (payload.auth === 'clerk') {
+      const tok = await getClerkGoogleAccessToken(payload.connectedByUserId)
+      if (!tok) return null
+      return {
+        mode: 'oauth',
+        propertyId: payload.propertyId,
+        accessToken: tok.accessToken,
+      }
+    }
     if (payload.auth === 'oauth') {
       const accessToken = await refreshAccessToken(payload.refreshToken)
       return {
@@ -161,6 +171,17 @@ export async function getSiteGoogleAdsCredentials(
       null
     if (!developerToken) return null
 
+    if (payload.auth === 'clerk') {
+      const tok = await getClerkGoogleAccessToken(payload.connectedByUserId)
+      if (!tok) return null
+      return {
+        mode: 'oauth',
+        developerToken,
+        customerId,
+        loginCustomerId: normalizeCustomerId(payload.loginCustomerId) ?? undefined,
+        accessToken: tok.accessToken,
+      }
+    }
     if (payload.auth === 'oauth') {
       const accessToken = await refreshAccessToken(payload.refreshToken)
       return {
