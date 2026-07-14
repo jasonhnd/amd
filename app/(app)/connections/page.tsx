@@ -1,24 +1,41 @@
 import { connections, STATUS_META } from '@/lib/connections'
 import { getGa4Credentials, isGa4Configured } from '@/lib/ga4-config'
+import { getGoogleAdsCredentials, isGoogleAdsConfigured } from '@/lib/google-ads-config'
 import { Check, AlertTriangle, Plus, Upload } from 'lucide-react'
 
 export default function ConnectionsPage() {
   const ga4Configured = isGa4Configured()
   const ga4Credentials = getGa4Credentials()
+  const googleAdsConfigured = isGoogleAdsConfigured()
+  const googleAdsCredentials = getGoogleAdsCredentials()
   const visibleConnections = connections.map((connection) => {
-    if (connection.key !== 'ga4') {
-      return connection
+    if (connection.key === 'ga4') {
+      return {
+        ...connection,
+        accountId: ga4Credentials ? `Property ${ga4Credentials.propertyId}` : 'GA4_PROPERTY_ID 未配置',
+        status: ga4Configured ? 'connected' : 'disconnected',
+        method: 'Vercel 环境变量',
+        note: ga4Configured
+          ? 'GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON 已配置，凭证只在服务端读取'
+          : '在 Vercel 环境变量设置 GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON 后启用',
+      } as const
     }
 
-    return {
-      ...connection,
-      accountId: ga4Credentials ? `Property ${ga4Credentials.propertyId}` : 'GA4_PROPERTY_ID 未配置',
-      status: ga4Configured ? 'connected' : 'disconnected',
-      method: 'Vercel 环境变量',
-      note: ga4Configured
-        ? 'GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON 已配置，凭证只在服务端读取'
-        : '在 Vercel 环境变量设置 GA4_PROPERTY_ID 与 GA4_SERVICE_ACCOUNT_JSON 后启用',
-    } as const
+    if (connection.key === 'google_ads') {
+      return {
+        ...connection,
+        accountId: googleAdsCredentials
+          ? `Customer ${googleAdsCredentials.customerId}`
+          : 'GOOGLE_ADS_CUSTOMER_ID 未配置',
+        status: googleAdsConfigured ? 'connected' : 'disconnected',
+        method: 'Vercel 环境变量',
+        note: googleAdsConfigured
+          ? 'Google Ads Developer Token、Customer ID 与服务账号 JSON 已配置，凭证只在服务端读取'
+          : '在 Vercel 环境变量设置 GOOGLE_ADS_DEVELOPER_TOKEN、GOOGLE_ADS_CUSTOMER_ID 与 GOOGLE_ADS_SERVICE_ACCOUNT_JSON 后启用',
+      } as const
+    }
+
+    return connection
   })
 
   return (
@@ -82,7 +99,7 @@ export default function ConnectionsPage() {
                   </div>
 
                   <div className="flex shrink-0 gap-2">
-                    {c.key === 'ga4' ? (
+                    {c.key === 'ga4' || c.key === 'google_ads' ? (
                       <div
                         className="rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)]"
                         style={{ borderRadius: 10 }}
@@ -90,7 +107,7 @@ export default function ConnectionsPage() {
                         Vercel Env
                       </div>
                     ) : null}
-                    {c.key !== 'ga4' && (c.key === 'x_ads' || c.status === 'error') ? (
+                    {c.key !== 'ga4' && c.key !== 'google_ads' && (c.key === 'x_ads' || c.status === 'error') ? (
                       <button
                         className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
                         style={{ borderRadius: 10 }}
@@ -99,7 +116,7 @@ export default function ConnectionsPage() {
                         上传 xlsx
                       </button>
                     ) : null}
-                    {c.key !== 'ga4' && c.status === 'connected' ? (
+                    {c.key !== 'ga4' && c.key !== 'google_ads' && c.status === 'connected' ? (
                       <button
                         className="rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
                         style={{ borderRadius: 10 }}
@@ -107,7 +124,7 @@ export default function ConnectionsPage() {
                         断开
                       </button>
                     ) : null}
-                    {c.key !== 'ga4' && c.status !== 'connected' ? (
+                    {c.key !== 'ga4' && c.key !== 'google_ads' && c.status !== 'connected' ? (
                       <button
                         className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
                         style={{ background: 'var(--color-accent)', borderRadius: 10 }}
@@ -124,7 +141,7 @@ export default function ConnectionsPage() {
         </div>
 
         <p className="mt-6 text-center text-[12px] text-[var(--color-ink-faint)]">
-          GA4 凭证由 Vercel 环境变量提供；其他平台仍为占位状态
+          GA4 与 Google Ads 凭证由 Vercel 环境变量提供；Meta / X 仍为占位状态
         </p>
       </div>
     </>
