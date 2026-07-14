@@ -15,6 +15,7 @@ export {
   type GoogleAdsApiClient,
 } from './google-ads'
 export { fetchMetaAdsDaily, metaAdsStatus, normalizeMetaAds } from './meta-ads'
+export { parseXAdsDailyExport, X_ADS_ACCOUNT_ID, type XAdsParseResult } from './x-ads'
 
 export const connectors = {
   ga4: {

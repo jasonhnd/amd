@@ -3,6 +3,8 @@ import { getGa4Credentials, isGa4Configured } from '@/lib/ga4-config'
 import { getGoogleAdsCredentials, isGoogleAdsConfigured } from '@/lib/google-ads-config'
 import { getMetaAdsCredentials, isMetaAdsConfigured } from '@/lib/meta-ads-config'
 import { metaAdsStatus } from '@/lib/connectors'
+import { getXAdsLastUpload } from '@/lib/x-ads-upload'
+import { uploadXAds } from './actions'
 import { Check, AlertTriangle, Plus, Upload } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +17,7 @@ export default async function ConnectionsPage() {
   const metaAdsConfigured = isMetaAdsConfigured()
   const metaAdsCredentials = getMetaAdsCredentials()
   const metaStatus = metaAdsCredentials ? await metaAdsStatus(metaAdsCredentials) : null
+  const xAdsUpload = await getXAdsLastUpload()
   const visibleConnections = connections.map((connection) => {
     if (connection.key === 'ga4') {
       return {
@@ -55,6 +58,21 @@ export default async function ConnectionsPage() {
             ? 'META_ACCESS_TOKEN 已配置，凭证只在服务端读取'
             : metaStatus?.error ?? 'Meta Marketing API 连接异常'
           : '在 Vercel 环境变量设置 META_ACCESS_TOKEN 后启用；META_AD_ACCOUNT_ID 可选',
+      } as const
+    }
+
+    if (connection.key === 'x_ads') {
+      const lastOk = xAdsUpload?.ok === true
+      const lastError = xAdsUpload?.ok === false
+
+      return {
+        ...connection,
+        status: lastOk ? 'connected' : lastError ? 'error' : 'disconnected',
+        note: lastOk
+          ? `Last parse OK: ${xAdsUpload.filename} · ${xAdsUpload.metrics.length} day(s) · spend ${xAdsUpload.totals.spend.toLocaleString()} · impressions ${xAdsUpload.totals.impressions.toLocaleString()} · clicks ${xAdsUpload.totals.clicks.toLocaleString()}`
+          : lastError
+            ? `Last parse error: ${xAdsUpload.errors[0]}`
+            : connection.note,
       } as const
     }
 
@@ -130,7 +148,30 @@ export default async function ConnectionsPage() {
                         Vercel Env
                       </div>
                     ) : null}
-                    {c.key === 'x_ads' || (c.key !== 'ga4' && c.key !== 'google_ads' && c.key !== 'meta_ads' && c.status === 'error') ? (
+                    {c.key === 'x_ads' ? (
+                      <form action={uploadXAds} className="flex max-w-[360px] flex-wrap justify-end gap-2">
+                        <input
+                          type="file"
+                          name="xAdsFile"
+                          accept=".xlsx,.xls,.csv"
+                          className="max-w-[220px] rounded-lg border px-3 py-1.5 text-[13px] text-[var(--color-ink-soft)] file:mr-2 file:border-0 file:bg-transparent file:text-[13px] file:font-medium"
+                          style={{ borderRadius: 10 }}
+                        />
+                        <button
+                          type="submit"
+                          className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
+                          style={{ borderRadius: 10 }}
+                        >
+                          <Upload size={14} />
+                          上传
+                        </button>
+                      </form>
+                    ) : null}
+                    {c.key !== 'ga4' &&
+                    c.key !== 'google_ads' &&
+                    c.key !== 'meta_ads' &&
+                    c.key !== 'x_ads' &&
+                    c.status === 'error' ? (
                       <button
                         className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
                         style={{ borderRadius: 10 }}
@@ -139,7 +180,11 @@ export default async function ConnectionsPage() {
                         上传 xlsx
                       </button>
                     ) : null}
-                    {c.key !== 'ga4' && c.key !== 'google_ads' && c.key !== 'meta_ads' && c.status === 'connected' ? (
+                    {c.key !== 'ga4' &&
+                    c.key !== 'google_ads' &&
+                    c.key !== 'meta_ads' &&
+                    c.key !== 'x_ads' &&
+                    c.status === 'connected' ? (
                       <button
                         className="rounded-lg border px-3 py-1.5 text-[13px] font-medium text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-line-soft)]"
                         style={{ borderRadius: 10 }}
@@ -147,7 +192,11 @@ export default async function ConnectionsPage() {
                         断开
                       </button>
                     ) : null}
-                    {c.key !== 'ga4' && c.key !== 'google_ads' && c.key !== 'meta_ads' && c.status !== 'connected' ? (
+                    {c.key !== 'ga4' &&
+                    c.key !== 'google_ads' &&
+                    c.key !== 'meta_ads' &&
+                    c.key !== 'x_ads' &&
+                    c.status !== 'connected' ? (
                       <button
                         className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
                         style={{ background: 'var(--color-accent)', borderRadius: 10 }}
@@ -164,7 +213,7 @@ export default async function ConnectionsPage() {
         </div>
 
         <p className="mt-6 text-center text-[12px] text-[var(--color-ink-faint)]">
-          GA4 / Google Ads / Meta 凭证由 Vercel 环境变量提供；X 仍走上传路径
+          GA4 / Google Ads / Meta 凭证由 Vercel 环境变量提供；X Ads v1 使用手动日报上传，结果仅保存在当前服务实例内存
         </p>
       </div>
     </>
