@@ -35,11 +35,16 @@ export async function saveGa4Connection(
     }
     JSON.parse(serviceAccountJson)
 
+    const payload = {
+      auth: 'service_account' as const,
+      propertyId,
+      serviceAccountJson,
+    }
     await saveConnectionCredentials({
       siteId: site.id,
       platform: 'ga4',
       accountId: `Property ${propertyId}`,
-      payload: { propertyId, serviceAccountJson },
+      payload,
       status: 'connected',
     })
 
@@ -53,7 +58,7 @@ export async function saveGa4Connection(
         siteId: site.id,
         platform: 'ga4',
         accountId: `Property ${propertyId}`,
-        payload: { propertyId, serviceAccountJson },
+        payload,
         status: 'error',
         lastError: status.error,
       })
@@ -89,15 +94,17 @@ export async function saveGoogleAdsConnection(
       await setOrgSecret(site.orgId, 'google_ads_developer_token', developerToken)
     }
 
+    const payload = {
+      auth: 'service_account' as const,
+      customerId,
+      loginCustomerId,
+      serviceAccountJson,
+    }
     await saveConnectionCredentials({
       siteId: site.id,
       platform: 'google_ads',
       accountId: customerId,
-      payload: {
-        customerId,
-        loginCustomerId,
-        serviceAccountJson,
-      },
+      payload,
       status: 'connected',
     })
 
@@ -114,7 +121,7 @@ export async function saveGoogleAdsConnection(
         siteId: site.id,
         platform: 'google_ads',
         accountId: customerId,
-        payload: { customerId, loginCustomerId, serviceAccountJson },
+        payload,
         status: 'error',
         lastError: status.error,
       })

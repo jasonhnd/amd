@@ -108,7 +108,30 @@ export function mergeKeyEvents(base: DailyMetrics[], resp: Ga4Response): DailyMe
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
-function createGa4Client(credentials: Ga4Credentials): BetaAnalyticsDataClient {
+async function runReportOauth(
+  accessToken: string,
+  propertyId: string,
+  body: Record<string, unknown>
+): Promise<Ga4Response> {
+  const resp = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!resp.ok) {
+    const text = await resp.text()
+    throw new Error(`GA4 runReport failed (${resp.status}): ${text.slice(0, 200)}`)
+  }
+  return (await resp.json()) as Ga4Response
+}
+
+function createGa4Client(credentials: Extract<Ga4Credentials, { mode: 'service_account' }>) {
   return new BetaAnalyticsDataClient({
     credentials: {
       client_email: credentials.clientEmail,
@@ -122,10 +145,7 @@ export async function fetchGa4Daily(
   credentials: Ga4Credentials,
   range: { start: string; end: string }
 ): Promise<DailyMetrics[]> {
-  const ga4 = createGa4Client(credentials)
-  const property = `properties/${credentials.propertyId}`
-  const [traffic] = await ga4.runReport({
-    property,
+  const trafficBody = {
     dateRanges: [{ startDate: range.start, endDate: range.end }],
     dimensions: [{ name: 'date' }, { name: 'sessionDefaultChannelGroup' }],
     metrics: [
@@ -133,9 +153,8 @@ export async function fetchGa4Daily(
       { name: 'sessions' },
       { name: 'averageSessionDuration' },
     ],
-  })
-  const [events] = await ga4.runReport({
-    property,
+  }
+  const eventsBody = {
     dateRanges: [{ startDate: range.start, endDate: range.end }],
     dimensions: [{ name: 'date' }, { name: 'eventName' }],
     metrics: [{ name: 'eventCount' }],
@@ -145,8 +164,26 @@ export async function fetchGa4Daily(
         inListFilter: { values: [...KEY_EVENTS] },
       },
     },
-  })
+  }
 
+  if (credentials.mode === 'oauth') {
+    const traffic = await runReportOauth(
+      credentials.accessToken,
+      credentials.propertyId,
+      trafficBody
+    )
+    const events = await runReportOauth(
+      credentials.accessToken,
+      credentials.propertyId,
+      eventsBody
+    )
+    return mergeKeyEvents(normalizeGa4(traffic), events)
+  }
+
+  const ga4 = createGa4Client(credentials)
+  const property = `properties/${credentials.propertyId}`
+  const [traffic] = await ga4.runReport({ property, ...trafficBody })
+  const [events] = await ga4.runReport({ property, ...eventsBody })
   return mergeKeyEvents(normalizeGa4(traffic), events)
 }
 
@@ -155,12 +192,7 @@ export async function ga4Status(
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const today = new Date().toISOString().slice(0, 10)
-    await createGa4Client(credentials).runReport({
-      property: `properties/${credentials.propertyId}`,
-      dateRanges: [{ startDate: today, endDate: today }],
-      metrics: [{ name: 'activeUsers' }],
-    })
-
+    await fetchGa4Daily(credentials, { start: today, end: today })
     return { ok: true }
   } catch (error) {
     return {

@@ -47,6 +47,10 @@ function microsToCurrency(value: string | number | null | undefined): number {
 }
 
 async function getAccessToken(credentials: GoogleAdsCredentials): Promise<string> {
+  if (credentials.mode === 'oauth') {
+    return credentials.accessToken
+  }
+
   const now = Math.floor(Date.now() / 1000)
   const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
   const claimSet = base64Url(

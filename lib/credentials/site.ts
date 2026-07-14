@@ -9,6 +9,7 @@ import { connections, orgSecrets, type ConnectionPlatform } from '@/lib/db/schem
 import type { Ga4Credentials } from '@/lib/ga4-config'
 import type { GoogleAdsCredentials } from '@/lib/google-ads-config'
 import { DEFAULT_META_AD_ACCOUNT_ID, type MetaAdsCredentials } from '@/lib/meta-ads-config'
+import { refreshAccessToken } from '@/lib/google-oauth'
 import type {
   Ga4CredentialPayload,
   GoogleAdsCredentialPayload,
@@ -123,8 +124,17 @@ export async function getSiteGa4Credentials(siteId: string): Promise<Ga4Credenti
   if (!row?.credentialsEnc || row.status === 'disconnected') return null
   try {
     const payload = decryptJson<Ga4CredentialPayload>(row.credentialsEnc)
+    if (payload.auth === 'oauth') {
+      const accessToken = await refreshAccessToken(payload.refreshToken)
+      return {
+        mode: 'oauth',
+        propertyId: payload.propertyId,
+        accessToken,
+      }
+    }
     const sa = serviceAccountSchema.parse(JSON.parse(payload.serviceAccountJson))
     return {
+      mode: 'service_account',
       propertyId: payload.propertyId,
       clientEmail: sa.client_email,
       privateKey: sa.private_key,
@@ -145,13 +155,26 @@ export async function getSiteGoogleAdsCredentials(
     const payload = decryptJson<GoogleAdsCredentialPayload>(row.credentialsEnc)
     const customerId = normalizeCustomerId(payload.customerId)
     if (!customerId) return null
-    const sa = serviceAccountSchema.parse(JSON.parse(payload.serviceAccountJson))
     const developerToken =
       payload.developerToken ||
       (await getOrgSecret(orgId, 'google_ads_developer_token')) ||
       null
     if (!developerToken) return null
+
+    if (payload.auth === 'oauth') {
+      const accessToken = await refreshAccessToken(payload.refreshToken)
+      return {
+        mode: 'oauth',
+        developerToken,
+        customerId,
+        loginCustomerId: normalizeCustomerId(payload.loginCustomerId) ?? undefined,
+        accessToken,
+      }
+    }
+
+    const sa = serviceAccountSchema.parse(JSON.parse(payload.serviceAccountJson))
     return {
+      mode: 'service_account',
       developerToken,
       customerId,
       loginCustomerId: normalizeCustomerId(payload.loginCustomerId) ?? undefined,

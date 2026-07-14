@@ -1,9 +1,11 @@
 import { auth } from '@clerk/nextjs/server'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { STATUS_META } from '@/lib/connections'
 import { listConnectionStatuses } from '@/lib/credentials/site'
 import { isDatabaseConfigured } from '@/lib/db/client'
+import { isGoogleOAuthConfigured } from '@/lib/google-oauth'
 import { roleAtLeast, requireSiteAccess } from '@/lib/sites/access'
 import { getXAdsLastUpload } from '@/lib/x-ads-upload'
 import {
@@ -33,23 +35,26 @@ const PLATFORM_META = [
   {
     key: 'meta_ads' as const,
     name: 'Meta Ads',
-    desc: 'IG / FB 花费与点击',
+    desc: '可选 · 有 token 再填',
     accent: 'var(--color-meta)',
   },
   {
     key: 'x_ads' as const,
     name: 'X Ads',
-    desc: '手动上传 Daily xlsx/csv',
+    desc: '上传 Daily 报表文件',
     accent: 'var(--color-x)',
   },
 ]
 
 export default async function SiteConnectionsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { slug } = await params
+  const sp = await searchParams
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
   if (!isDatabaseConfigured()) redirect('/sites')
@@ -59,14 +64,64 @@ export default async function SiteConnectionsPage({
   const rows = await listConnectionStatuses(site.id)
   const byPlatform = Object.fromEntries(rows.map((r) => [r.platform, r]))
   const xUpload = await getXAdsLastUpload(site.id)
+  const oauthReady = isGoogleOAuthConfigured()
+  const googleOk = sp.google === 'ok'
+  const err = typeof sp.err === 'string' ? sp.err : null
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-xl font-semibold tracking-tight">连接 · {site.name}</h1>
       <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-        在站内填写凭证（加密存库）。不要写入 Vercel 业务环境变量。
+        优先一键连接 Google。X 用上传。Meta 可选。
         {!canEdit && ' 当前为只读角色。'}
       </p>
+
+      {googleOk ? (
+        <div className="mt-4 rounded-xl border border-[var(--color-ok)] bg-[var(--color-ok-soft)] px-4 py-3 text-sm text-[var(--color-ok)]">
+          Google 账号已绑定。看板将使用所选 GA4 / Ads。
+        </div>
+      ) : null}
+      {err ? (
+        <div className="mt-4 rounded-xl border px-4 py-3 text-sm text-[var(--color-warn)]">
+          {err === 'google_session'
+            ? 'Google 会话已过期，请重新点「用 Google 一键连接」。'
+            : err}
+        </div>
+      ) : null}
+
+      {canEdit ? (
+        <section
+          className="mt-6 rounded-2xl border bg-[var(--color-panel)] p-6"
+          style={{ borderRadius: 16 }}
+        >
+          <h2 className="text-[15px] font-semibold">Google · 一键连接</h2>
+          <p className="mt-1 text-[13px] text-[var(--color-ink-soft)]">
+            授权后选择 GA4 属性与 Google Ads 客户，无需粘贴 JSON。
+          </p>
+          {oauthReady ? (
+            <a
+              href={`/api/connectors/google/start?site=${encodeURIComponent(slug)}`}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#1a73e8] px-5 py-2.5 text-sm font-medium text-white"
+              style={{ borderRadius: 10 }}
+            >
+              用 Google 连接 GA4 + Ads
+            </a>
+          ) : (
+            <div className="mt-4 text-sm text-[var(--color-warn)]">
+              尚未配置 Google OAuth 客户端。需要在 Vercel 设置{' '}
+              <code className="text-xs">GOOGLE_OAUTH_CLIENT_ID</code> 与{' '}
+              <code className="text-xs">GOOGLE_OAUTH_CLIENT_SECRET</code>
+              。见下方说明。
+            </div>
+          )}
+          <p className="mt-3 text-[12px] text-[var(--color-ink-faint)]">
+            Ads 列表需要组织级 Developer Token：
+            <Link href={`/sites/${slug}/settings`} className="text-[var(--color-accent)] underline">
+              打开设置填写（全站一次）
+            </Link>
+          </p>
+        </section>
+      ) : null}
 
       <div className="mt-8 flex flex-col gap-6">
         {PLATFORM_META.map((p) => {
