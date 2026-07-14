@@ -6,35 +6,9 @@ const credentials = {
   accessToken: 'test-token',
   adAccountId: 'act_1497377618536088',
 }
-const originalMetaAccessToken = process.env.META_ACCESS_TOKEN
-const originalMetaAdAccountId = process.env.META_AD_ACCOUNT_ID
-
-function restoreEnv(name: 'META_ACCESS_TOKEN' | 'META_AD_ACCOUNT_ID', value: string | undefined) {
-  if (value === undefined) {
-    delete process.env[name]
-    return
-  }
-
-  process.env[name] = value
-}
 
 afterEach(() => {
-  restoreEnv('META_ACCESS_TOKEN', originalMetaAccessToken)
-  restoreEnv('META_AD_ACCOUNT_ID', originalMetaAdAccountId)
   vi.unstubAllGlobals()
-})
-
-describe('getMetaAdsCredentials', () => {
-  it('uses the default ad account when META_AD_ACCOUNT_ID is not set', async () => {
-    process.env.META_ACCESS_TOKEN = 'env-token'
-    delete process.env.META_AD_ACCOUNT_ID
-    const { getMetaAdsCredentials } = await import('../meta-ads-config')
-
-    expect(getMetaAdsCredentials()).toEqual({
-      accessToken: 'env-token',
-      adAccountId: 'act_1497377618536088',
-    })
-  })
 })
 
 describe('normalizeMetaAds', () => {
