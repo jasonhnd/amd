@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('server-only', () => ({}))
 
 const credentials = {
+  mode: 'service_account' as const,
   developerToken: 'developer-token',
   customerId: '9203167221',
   loginCustomerId: '6563038097',

@@ -17,5 +17,7 @@ function required(name: string): string {
 export const env = {
   DATABASE_URL: () => opt('DATABASE_URL'),
   APP_ENCRYPTION_KEY: () => opt('APP_ENCRYPTION_KEY'),
+  GOOGLE_OAUTH_CLIENT_ID: () => opt('GOOGLE_OAUTH_CLIENT_ID'),
+  GOOGLE_OAUTH_CLIENT_SECRET: () => opt('GOOGLE_OAUTH_CLIENT_SECRET'),
   requireDatabaseUrl: () => required('DATABASE_URL'),
 }

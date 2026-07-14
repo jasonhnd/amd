@@ -24,6 +24,7 @@ export function ConnectionForms({
 }) {
   const [msg, setMsg] = useState<string | null>(null)
   const [pending, start] = useTransition()
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   function runSave(action: (fd: FormData) => Promise<SaveResult>, fd: FormData) {
     start(async () => {
@@ -33,46 +34,84 @@ export function ConnectionForms({
     })
   }
 
-  if (platform === 'ga4') {
+  if (platform === 'ga4' || platform === 'google_ads') {
     return (
-      <form
-        className="mt-4 flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault()
-          runSave(saveGa4, new FormData(e.currentTarget))
-        }}
-      >
-        <Field name="propertyId" label="Property ID" placeholder="298707336" required />
-        <TextArea
-          name="serviceAccountJson"
-          label="Service Account JSON"
-          placeholder='{"type":"service_account",...}'
-          required
-        />
-        <Actions pending={pending} msg={msg} onDisconnect={() => start(async () => { await disconnect(); setMsg('已断开') })} />
-      </form>
-    )
-  }
-
-  if (platform === 'google_ads') {
-    return (
-      <form
-        className="mt-4 flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault()
-          runSave(saveGoogle, new FormData(e.currentTarget))
-        }}
-      >
-        <Field name="customerId" label="Customer ID" placeholder="920-316-7221" required />
-        <Field name="loginCustomerId" label="Login Customer ID (MCC，可选)" placeholder="656-303-8097" />
-        <Field
-          name="developerToken"
-          label="Developer Token（组织级，首次必填）"
-          placeholder="留空则使用已存组织密钥"
-        />
-        <TextArea name="serviceAccountJson" label="Service Account JSON" required />
-        <Actions pending={pending} msg={msg} onDisconnect={() => start(async () => { await disconnect(); setMsg('已断开') })} />
-      </form>
+      <div className="mt-4">
+        <p className="text-[12px] text-[var(--color-ink-faint)]">
+          推荐使用页面顶部的「用 Google 一键连接」。以下为专家手动模式。
+        </p>
+        <button
+          type="button"
+          className="mt-2 text-[12px] text-[var(--color-accent)] underline"
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          {showAdvanced ? '收起手动表单' : '展开手动粘贴（服务账号 JSON）'}
+        </button>
+        {showAdvanced ? (
+          platform === 'ga4' ? (
+            <form
+              className="mt-4 flex flex-col gap-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                runSave(saveGa4, new FormData(e.currentTarget))
+              }}
+            >
+              <Field name="propertyId" label="Property ID" placeholder="298707336" required />
+              <TextArea name="serviceAccountJson" label="Service Account JSON" required />
+              <Actions
+                pending={pending}
+                msg={msg}
+                onDisconnect={() =>
+                  start(async () => {
+                    await disconnect()
+                    setMsg('已断开')
+                  })
+                }
+              />
+            </form>
+          ) : (
+            <form
+              className="mt-4 flex flex-col gap-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                runSave(saveGoogle, new FormData(e.currentTarget))
+              }}
+            >
+              <Field name="customerId" label="Customer ID" required />
+              <Field name="loginCustomerId" label="Login Customer ID (MCC，可选)" />
+              <Field name="developerToken" label="Developer Token（组织级，可选）" />
+              <TextArea name="serviceAccountJson" label="Service Account JSON" required />
+              <Actions
+                pending={pending}
+                msg={msg}
+                onDisconnect={() =>
+                  start(async () => {
+                    await disconnect()
+                    setMsg('已断开')
+                  })
+                }
+              />
+            </form>
+          )
+        ) : (
+          <div className="mt-3">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                start(async () => {
+                  await disconnect()
+                  setMsg('已断开')
+                })
+              }
+              className="rounded-lg border px-3 py-1.5 text-[12px] text-[var(--color-ink-soft)]"
+            >
+              断开此平台
+            </button>
+            {msg ? <p className="mt-2 text-[12px] text-[var(--color-ink-soft)]">{msg}</p> : null}
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -85,9 +124,21 @@ export function ConnectionForms({
           runSave(saveMeta, new FormData(e.currentTarget))
         }}
       >
+        <p className="text-[12px] text-[var(--color-ink-faint)]">
+          Meta 暂不支持一键 OAuth；有 token 再填。没有可跳过。
+        </p>
         <Field name="accessToken" label="Access Token" required />
         <Field name="adAccountId" label="Ad Account ID" placeholder="act_1497377618536088" />
-        <Actions pending={pending} msg={msg} onDisconnect={() => start(async () => { await disconnect(); setMsg('已断开') })} />
+        <Actions
+          pending={pending}
+          msg={msg}
+          onDisconnect={() =>
+            start(async () => {
+              await disconnect()
+              setMsg('已断开')
+            })
+          }
+        />
       </form>
     )
   }
@@ -106,7 +157,7 @@ export function ConnectionForms({
         action={(fd) => {
           start(async () => {
             await uploadX(fd)
-            setMsg('上传完成，请刷新查看状态')
+            setMsg('上传完成')
           })
         }}
         className="flex flex-col gap-3"
@@ -118,7 +169,7 @@ export function ConnectionForms({
           className="w-fit rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-70"
           style={{ borderRadius: 10 }}
         >
-          {pending ? '处理中…' : '上传解析'}
+          {pending ? '处理中…' : '上传 X 日报'}
         </button>
       </form>
       {msg ? <p className="text-[12px] text-[var(--color-ink-soft)]">{msg}</p> : null}
@@ -154,12 +205,10 @@ function Field({
 function TextArea({
   name,
   label,
-  placeholder,
   required,
 }: {
   name: string
   label: string
-  placeholder?: string
   required?: boolean
 }) {
   return (
@@ -168,8 +217,7 @@ function TextArea({
       <textarea
         name={name}
         required={required}
-        placeholder={placeholder}
-        rows={5}
+        rows={4}
         spellCheck={false}
         className="mt-1 w-full rounded-lg border bg-transparent px-3 py-2 font-mono text-[12px]"
       />

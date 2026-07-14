@@ -1,9 +1,11 @@
 import { auth } from '@clerk/nextjs/server'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { STATUS_META } from '@/lib/connections'
 import { listConnectionStatuses } from '@/lib/credentials/site'
 import { isDatabaseConfigured } from '@/lib/db/client'
+import { getClerkGoogleAccessToken } from '@/lib/clerk-google'
 import { roleAtLeast, requireSiteAccess } from '@/lib/sites/access'
 import { getXAdsLastUpload } from '@/lib/x-ads-upload'
 import {
@@ -33,23 +35,26 @@ const PLATFORM_META = [
   {
     key: 'meta_ads' as const,
     name: 'Meta Ads',
-    desc: 'IG / FB 花费与点击',
+    desc: '可选 · 有 token 再填',
     accent: 'var(--color-meta)',
   },
   {
     key: 'x_ads' as const,
     name: 'X Ads',
-    desc: '手动上传 Daily xlsx/csv',
+    desc: '上传 Daily 报表文件',
     accent: 'var(--color-x)',
   },
 ]
 
 export default async function SiteConnectionsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { slug } = await params
+  const sp = await searchParams
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
   if (!isDatabaseConfigured()) redirect('/sites')
@@ -59,14 +64,60 @@ export default async function SiteConnectionsPage({
   const rows = await listConnectionStatuses(site.id)
   const byPlatform = Object.fromEntries(rows.map((r) => [r.platform, r]))
   const xUpload = await getXAdsLastUpload(site.id)
+  const clerkGoogle = await getClerkGoogleAccessToken(userId)
+  const googleOk = sp.google === 'ok'
+  const err = typeof sp.err === 'string' ? sp.err : null
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       <h1 className="text-xl font-semibold tracking-tight">连接 · {site.name}</h1>
       <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-        在站内填写凭证（加密存库）。不要写入 Vercel 业务环境变量。
+        用登录的 Google 选账号即可（经 Clerk，无需 GCP）。X 上传。Meta 可选。
         {!canEdit && ' 当前为只读角色。'}
       </p>
+
+      {googleOk ? (
+        <div className="mt-4 rounded-xl border border-[var(--color-ok)] bg-[var(--color-ok-soft)] px-4 py-3 text-sm text-[var(--color-ok)]">
+          Google 账号已绑定。看板将使用所选 GA4 / Ads。
+        </div>
+      ) : null}
+      {err ? (
+        <div className="mt-4 rounded-xl border px-4 py-3 text-sm text-[var(--color-warn)]">
+          {err}
+        </div>
+      ) : null}
+
+      {canEdit ? (
+        <section
+          className="mt-6 rounded-2xl border bg-[var(--color-panel)] p-6"
+          style={{ borderRadius: 16 }}
+        >
+          <h2 className="text-[15px] font-semibold">Google · 选账号连接</h2>
+          <p className="mt-1 text-[13px] text-[var(--color-ink-soft)]">
+            不建 GCP、不贴 JSON。请先用 Google 登录 AMD；若权限不够，在 Clerk Dashboard
+            给 Google 连接加上 Analytics / Ads 范围后重新授权。
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Link
+              href={`/sites/${slug}/connections/google/pick`}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#1a73e8] px-5 py-2.5 text-sm font-medium text-white"
+              style={{ borderRadius: 10 }}
+            >
+              {clerkGoogle ? '选择 GA4 / Ads 账号' : '继续 · 检查 Google 权限'}
+            </Link>
+            <span className="text-[12px] text-[var(--color-ink-faint)]">
+              Google token：{clerkGoogle ? '已拿到' : '未拿到（需 Google 登录）'}
+            </span>
+          </div>
+          <p className="mt-3 text-[12px] text-[var(--color-ink-faint)]">
+            若要 Ads：
+            <Link href={`/sites/${slug}/settings`} className="text-[var(--color-accent)] underline">
+              设置里填一次 Developer Token
+            </Link>
+            （Google 政策要求，与 GCP 无关）
+          </p>
+        </section>
+      ) : null}
 
       <div className="mt-8 flex flex-col gap-6">
         {PLATFORM_META.map((p) => {
