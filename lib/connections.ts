@@ -37,9 +37,9 @@ export const connections: Connection[] = [
     name: 'Meta Ads',
     desc: 'IG / FB 花费与点击表现',
     accountId: 'act_1497377618536088',
-    status: 'error',
-    method: 'Marketing API',
-    note: 'API access blocked — 可手动上传 xlsx 兜底',
+    status: 'disconnected',
+    method: 'Vercel 环境变量 · Marketing API',
+    note: '设置 META_ACCESS_TOKEN 后启用；META_AD_ACCOUNT_ID 可选',
     accent: 'var(--color-meta)',
   },
   {
