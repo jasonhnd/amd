@@ -63,7 +63,12 @@ export default async function SiteConnectionsPage({
   const canEdit = roleAtLeast(role, 'editor')
   const rows = await listConnectionStatuses(site.id)
   const byPlatform = Object.fromEntries(rows.map((r) => [r.platform, r]))
-  const xUpload = await getXAdsLastUpload(site.id)
+  let xUpload = null
+  try {
+    xUpload = await getXAdsLastUpload(site.id)
+  } catch {
+    xUpload = null
+  }
   const clerkGoogle = await getClerkGoogleAccessToken(userId)
   const googleOk = sp.google === 'ok'
   const err = typeof sp.err === 'string' ? sp.err : null

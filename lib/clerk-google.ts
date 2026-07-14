@@ -15,21 +15,35 @@ export type ClerkGoogleToken = {
 
 /**
  * Read the signed-in user's Google OAuth access token from Clerk.
- * Requires the user to have signed in with Google, and Clerk Dashboard
- * Google provider to include analytics/adwords scopes (no GCP project of ours).
+ * Never throws — missing Google link / Bad Request → null.
  */
 export async function getClerkGoogleAccessToken(
   clerkUserId: string
 ): Promise<ClerkGoogleToken | null> {
-  const client = await clerkClient()
-  const res = await client.users.getUserOauthAccessToken(clerkUserId, 'google')
-  const row = res.data?.[0]
-  if (!row?.token) {
+  if (!clerkUserId) {
     return null
   }
-  return {
-    accessToken: row.token,
-    scopes: row.scopes ?? [],
+
+  try {
+    const client = await clerkClient()
+    // Prefer short provider id; fall back to legacy oauth_google if needed.
+    let res
+    try {
+      res = await client.users.getUserOauthAccessToken(clerkUserId, 'google')
+    } catch {
+      res = await client.users.getUserOauthAccessToken(clerkUserId, 'oauth_google')
+    }
+    const row = res.data?.[0]
+    if (!row?.token) {
+      return null
+    }
+    return {
+      accessToken: row.token,
+      scopes: row.scopes ?? [],
+    }
+  } catch {
+    // Clerk returns 400 Bad Request when the user has no Google external account.
+    return null
   }
 }
 
