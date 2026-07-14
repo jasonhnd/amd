@@ -1,7 +1,8 @@
 'use server'
 
 import { getGa4Credentials } from '@/lib/ga4-config'
-import { ga4Status } from '@/lib/connectors'
+import { getMetaAdsCredentials } from '@/lib/meta-ads-config'
+import { ga4Status, metaAdsStatus } from '@/lib/connectors'
 
 export async function testGa4(): Promise<{ ok: boolean; error?: string }> {
   const credentials = getGa4Credentials()
@@ -10,4 +11,13 @@ export async function testGa4(): Promise<{ ok: boolean; error?: string }> {
   }
 
   return ga4Status(credentials)
+}
+
+export async function testMetaAds(): Promise<{ ok: boolean; error?: string }> {
+  const credentials = getMetaAdsCredentials()
+  if (!credentials) {
+    return { ok: false, error: '未配置 META_ACCESS_TOKEN' }
+  }
+
+  return metaAdsStatus(credentials)
 }
