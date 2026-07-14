@@ -57,12 +57,14 @@
 - 语言：**跟用户用中文**。用户偏行动、少空谈；决策点用 AskUserQuestion 给选项。
 
 ### 8. 待办 / 下一步（按优先级）
-1. **#16 — 看板接真数据**：渠道表 + 花费 KPI 读 live connectors（不再只 mock）。blocked-by #13/#14/#15 已全部关闭。
-2. **#11 ops — 接 GA4 真实数据**（就差凭证）：GCP 服务账号 + Analytics Data API + GA4 property `298707336` 查看者 → Vercel `GA4_PROPERTY_ID` + `GA4_SERVICE_ACCOUNT_JSON` → 部署验证。
-3. **#12 ops — 确认/开启 Clerk Google 社交登录**。
-4. 配置广告平台凭证（按需）：Google Ads / Meta token 写入 Vercel production；X 用连接页上传日报。
-5. 可选：AI「今日运营建议」（v1 暂缓，规则版已在）、Vercel Cron 每日预拉、告警/异常检测。
-6. 可选：Clerk 换**生产实例**（`pk_live`）正式对外。
+1. **多站点 + 站内凭证**（设计 `docs/superpowers/specs/2026-07-14-amd-multi-site-connections.md`）
+   - #21 地基 · #22 连接表单 · #23 看板 site 化 · #24 成员 UI
+   - 基础设施 env：`DATABASE_URL`（Neon）+ `APP_ENCRYPTION_KEY`（32B base64）+ Clerk
+   - **业务凭证不再走 Vercel env**，在 `/sites/[slug]/connections` 填写
+2. ~~#16 看板 live KPI~~ 已合入；随后迁到 site 路径
+3. ~~#12 Clerk Google~~ 已验证关闭
+4. #11 改为：在站内连接页填 GA4（不再配 Vercel GA4_*）
+5. 可选：AI 运营建议、Cron、Clerk `pk_live`
 
 ### 9. 常见坑（务必带着走）
 - Next 15.5.20 用 `middleware.ts`（非 `proxy.ts`）——见 §4。

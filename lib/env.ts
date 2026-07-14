@@ -1,16 +1,21 @@
 import 'server-only'
 
+/**
+ * Infrastructure env only. Business platform credentials live encrypted in DB
+ * (see lib/credentials/site.ts). Do not re-add GA4_ or META_ business env readers.
+ */
 function opt(name: string): string | undefined {
   return process.env[name] || undefined
 }
 
+function required(name: string): string {
+  const v = process.env[name]
+  if (!v) throw new Error(`Missing required env var: ${name}`)
+  return v
+}
+
 export const env = {
-  GA4_PROPERTY_ID: () => opt('GA4_PROPERTY_ID'),
-  GA4_SERVICE_ACCOUNT_JSON: () => opt('GA4_SERVICE_ACCOUNT_JSON'),
-  GOOGLE_ADS_DEVELOPER_TOKEN: () => opt('GOOGLE_ADS_DEVELOPER_TOKEN'),
-  GOOGLE_ADS_CUSTOMER_ID: () => opt('GOOGLE_ADS_CUSTOMER_ID'),
-  GOOGLE_ADS_LOGIN_CUSTOMER_ID: () => opt('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
-  GOOGLE_ADS_SERVICE_ACCOUNT_JSON: () => opt('GOOGLE_ADS_SERVICE_ACCOUNT_JSON'),
-  META_ACCESS_TOKEN: () => opt('META_ACCESS_TOKEN'),
-  META_AD_ACCOUNT_ID: () => opt('META_AD_ACCOUNT_ID'),
+  DATABASE_URL: () => opt('DATABASE_URL'),
+  APP_ENCRYPTION_KEY: () => opt('APP_ENCRYPTION_KEY'),
+  requireDatabaseUrl: () => required('DATABASE_URL'),
 }
