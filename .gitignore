@@ -19,3 +19,4 @@ dist/
 
 # TS incremental build info (generated)
 *.tsbuildinfo
+.env*
